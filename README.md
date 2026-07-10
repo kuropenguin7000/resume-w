@@ -2,7 +2,12 @@
 
 Personal portfolio website of **Rafi Saeful Rahman**, Software Engineer (Senior Java Backend), built from my résumé.
 
-An interactive 3D "service network" (nodes and connections — a nod to backend & distributed systems work) floats behind the content and reacts to mouse movement and scrolling.
+An interactive 3D playground runs behind the content: drive a low-poly car around a glowing race track, knock over traffic cones, dodge rocks, and follow yourself on the minimap — all beneath a floating "service network" (nodes and connections, a nod to backend & distributed systems work). While you drive, the page content fades out so you can see the world; stop and it fades back in.
+
+## Controls
+
+- **Desktop:** `W A S D` or arrow keys
+- **Mobile / touch:** virtual joystick (bottom-left), MMORPG style — push up to accelerate, sideways to steer
 
 ## Tech stack
 

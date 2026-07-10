@@ -95,6 +95,17 @@ body {
 .page {
   position: relative;
   z-index: 1;
+  transition: opacity 0.45s ease;
+}
+
+/* While driving, fade the content away so the world is visible */
+body.driving .page {
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+body.driving .drive-hint {
+  opacity: 0;
 }
 
 main {
@@ -575,6 +586,7 @@ main {
   color: var(--text-dim);
   opacity: 0.85;
   pointer-events: none;
+  transition: opacity 0.3s ease;
 }
 
 .drive-hint .k {
@@ -630,6 +642,30 @@ main {
 @media (hover: none) and (pointer: coarse) {
   .joystick {
     display: block;
+  }
+}
+
+.minimap {
+  position: fixed;
+  top: 4.4rem;
+  right: 1.4rem;
+  z-index: 15;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(13, 18, 33, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .minimap {
+    top: 3.8rem;
+    right: 1rem;
+    width: 100px;
+    height: 100px;
   }
 }
 
