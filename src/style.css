@@ -502,30 +502,6 @@ main {
   gap: 0.5rem;
 }
 
-.skill-card-edu {
-  border-color: rgba(246, 173, 85, 0.35);
-}
-
-.skill-card-edu h3 {
-  color: var(--accent-2);
-}
-
-.edu-degree {
-  font-weight: 600;
-}
-
-.edu-school {
-  color: var(--text-dim);
-  margin-top: 0.2rem;
-}
-
-.edu-years {
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  color: var(--accent-2);
-  margin-top: 0.6rem;
-}
-
 /* ---------- contact ---------- */
 .section-contact {
   text-align: center;
@@ -582,6 +558,79 @@ main {
   font-family: var(--mono);
   border-top: 1px solid var(--line);
   background: rgba(5, 7, 15, 0.6);
+}
+
+/* ---------- drive controls ---------- */
+.drive-hint {
+  position: fixed;
+  right: 1.4rem;
+  bottom: 1.3rem;
+  z-index: 15;
+  display: none;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.drive-hint .k {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg-soft);
+  color: var(--accent);
+  font-size: 0.7rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .drive-hint {
+    display: flex;
+  }
+}
+
+.joystick {
+  position: fixed;
+  left: 1.4rem;
+  bottom: 1.6rem;
+  z-index: 15;
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(13, 18, 33, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  touch-action: none;
+  display: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.joystick-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 50px;
+  height: 50px;
+  margin: -25px 0 0 -25px;
+  border-radius: 50%;
+  background: rgba(79, 209, 197, 0.85);
+  box-shadow: 0 4px 16px rgba(79, 209, 197, 0.4);
+  will-change: transform;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .joystick {
+    display: block;
+  }
 }
 
 /* ---------- reveal animation ---------- */
