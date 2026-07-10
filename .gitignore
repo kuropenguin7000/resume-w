@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Original source PDF (the served copy lives in public/)
+/resume-rafi.pdf
+
+# Build output
+dist/
+
+# Firebase
+.firebase/
+firebase-debug.log
+.firebaserc
+
+# Env & local
+.env
+.env.*
+*.local
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local config
+.claude/
