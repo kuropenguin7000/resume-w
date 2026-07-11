@@ -2,8 +2,8 @@ import * as THREE from "three";
 import "./style.css";
 
 /* ================================================================
-   Interactive 3D background — drive a low-poly car around a track,
-   knock over cones, follow yourself on the minimap.
+   Interactive 3D background — drive a low-poly Nissan GT-R around
+   a track, smash cones, barrels and crates, follow the minimap.
    Desktop: WASD / arrow keys. Mobile: virtual joystick.
    The page content fades out while driving so the world is visible.
    ================================================================ */
@@ -139,11 +139,32 @@ const banner = new THREE.Mesh(
 banner.position.set(TRACK_RADIUS, GROUND_Y + 2.55, 0);
 scene.add(banner);
 
-/* ---------------- obstacles ---------------- */
-const CAR_RADIUS = 1.0;
+/* ================================================================
+   Obstacles
+   - solid: rocks, gate posts, tire stacks (car bounces off)
+   - knockable: cones, barrels, crates (go flying when hit)
+   ================================================================ */
+const CAR_RADIUS = 1.15;
 
-// Solid rocks — a few in the infield, most outside the track
 const solidObstacles = [];
+const knockables = [];
+
+function addKnockable(mesh, { r, restY, kick, spin, type }) {
+  scene.add(mesh);
+  knockables.push({
+    mesh,
+    r,
+    restY,
+    kick,
+    spin,
+    type,
+    state: "upright", // upright | flying | down
+    vel: new THREE.Vector3(),
+    angVel: new THREE.Vector3(),
+  });
+}
+
+// --- solid rocks: a few in the infield, most outside the track
 const rockGeometry = new THREE.IcosahedronGeometry(1, 0);
 const rockMaterial = new THREE.MeshStandardMaterial({
   color: 0x13273a,
@@ -164,12 +185,36 @@ function addRock(radius, angle, s) {
 for (let i = 0; i < 4; i += 1) addRock(rand(6, 13), rand(0, Math.PI * 2), rand(0.5, 1.1));
 for (let i = 0; i < 10; i += 1) addRock(rand(31, 55), rand(0, Math.PI * 2), rand(0.5, 1.7));
 
-// Gate posts are solid too
+// --- gate posts are solid too
 solidObstacles.push({ x: TRACK_INNER + 0.2, z: 0, r: 0.45, type: "post" });
 solidObstacles.push({ x: TRACK_OUTER - 0.2, z: 0, r: 0.45, type: "post" });
 
-// Traffic cones along the track edges — knockable!
-const cones = [];
+// --- solid tire stacks guarding the corners
+const tireGeometry = new THREE.TorusGeometry(0.46, 0.17, 8, 18);
+const tireMaterial = new THREE.MeshStandardMaterial({
+  color: 0x1a212c,
+  roughness: 0.95,
+  flatShading: true,
+});
+function addTireStack(radius, theta) {
+  const stack = new THREE.Group();
+  for (let i = 0; i < 3; i += 1) {
+    const tire = new THREE.Mesh(tireGeometry, tireMaterial);
+    tire.rotation.x = Math.PI / 2;
+    tire.rotation.z = rand(0, Math.PI);
+    tire.position.y = 0.17 + i * 0.34;
+    stack.add(tire);
+  }
+  stack.position.set(Math.cos(theta) * radius, GROUND_Y, Math.sin(theta) * radius);
+  scene.add(stack);
+  solidObstacles.push({ x: stack.position.x, z: stack.position.z, r: 0.75, type: "tire" });
+}
+addTireStack(27.2, 0.85);
+addTireStack(27.4, 2.7);
+addTireStack(16.6, 4.0);
+addTireStack(27.0, 5.4);
+
+// --- knockable traffic cones along the track edges
 const coneGeometry = new THREE.ConeGeometry(0.34, 0.8, 10);
 const coneMaterial = new THREE.MeshStandardMaterial({
   color: 0xe8833a,
@@ -178,21 +223,75 @@ const coneMaterial = new THREE.MeshStandardMaterial({
   flatShading: true,
   roughness: 0.6,
 });
-const CONE_COUNT = 24;
+const CONE_COUNT = 12;
 for (let i = 0; i < CONE_COUNT; i += 1) {
   const theta = (i / CONE_COUNT) * Math.PI * 2;
-  if (theta < 0.22 || theta > Math.PI * 2 - 0.22) continue; // keep the start gate clear
+  if (theta < 0.26 || theta > Math.PI * 2 - 0.26) continue; // keep the start gate clear
   const radius = i % 2 === 0 ? TRACK_INNER + 1.1 : TRACK_OUTER - 1.1;
   const mesh = new THREE.Mesh(coneGeometry, coneMaterial);
   mesh.position.set(Math.cos(theta) * radius, GROUND_Y + 0.4, Math.sin(theta) * radius);
-  scene.add(mesh);
-  cones.push({
-    mesh,
-    state: "upright", // upright | flying | down
-    vel: new THREE.Vector3(),
-    angVel: new THREE.Vector3(),
-  });
+  addKnockable(mesh, { r: 0.34, restY: GROUND_Y + 0.3, kick: 1, spin: 8, type: "cone" });
 }
+
+// --- knockable striped barrels, in clusters
+const barrelBodyGeometry = new THREE.CylinderGeometry(0.42, 0.42, 0.85, 12);
+const barrelBandGeometry = new THREE.CylinderGeometry(0.43, 0.43, 0.2, 12);
+const barrelMaterial = new THREE.MeshStandardMaterial({
+  color: 0xc53030,
+  flatShading: true,
+  roughness: 0.55,
+});
+const bandMaterial = new THREE.MeshStandardMaterial({
+  color: 0xe6edf7,
+  flatShading: true,
+  roughness: 0.5,
+});
+function addBarrel(x, z) {
+  const barrel = new THREE.Group();
+  barrel.add(new THREE.Mesh(barrelBodyGeometry, barrelMaterial));
+  const band = new THREE.Mesh(barrelBandGeometry, bandMaterial);
+  band.position.y = 0.1;
+  barrel.add(band);
+  barrel.position.set(x, GROUND_Y + 0.43, z);
+  barrel.rotation.y = rand(0, Math.PI);
+  addKnockable(barrel, { r: 0.5, restY: GROUND_Y + 0.43, kick: 0.55, spin: 5, type: "barrel" });
+}
+function addBarrelCluster(radius, theta) {
+  const cx = Math.cos(theta) * radius;
+  const cz = Math.sin(theta) * radius;
+  addBarrel(cx, cz);
+  addBarrel(cx + 0.95, cz + 0.2);
+  addBarrel(cx + 0.45, cz + 1.0);
+}
+addBarrelCluster(27.4, 1.85);
+addBarrelCluster(16.2, 4.5);
+
+// --- knockable wooden crates: a pyramid right on the track + strays
+const crateGeometry = new THREE.BoxGeometry(0.72, 0.72, 0.72);
+const crateMaterial = new THREE.MeshStandardMaterial({
+  color: 0x9c6b35,
+  flatShading: true,
+  roughness: 0.75,
+});
+function addCrate(x, z, y = GROUND_Y + 0.36) {
+  const crate = new THREE.Mesh(crateGeometry, crateMaterial);
+  crate.position.set(x, y, z);
+  crate.rotation.y = rand(0, Math.PI / 2);
+  addKnockable(crate, { r: 0.5, restY: GROUND_Y + 0.36, kick: 0.8, spin: 6, type: "crate" });
+}
+{
+  // pyramid across the far side of the track (theta ≈ π)
+  const theta = Math.PI + 0.15;
+  const cx = Math.cos(theta) * TRACK_RADIUS;
+  const cz = Math.sin(theta) * TRACK_RADIUS;
+  const tx = -Math.sin(theta); // tangent direction
+  const tz = Math.cos(theta);
+  addCrate(cx + tx * 0.4, cz + tz * 0.4);
+  addCrate(cx - tx * 0.4, cz - tz * 0.4);
+  addCrate(cx, cz, GROUND_Y + 1.08);
+}
+addCrate(Math.cos(2.3) * 9, Math.sin(2.3) * 9);
+addCrate(Math.cos(5.7) * 12, Math.sin(5.7) * 12);
 
 /* ---------------- node network (floating above the infield) ---------------- */
 const network = new THREE.Group();
@@ -291,75 +390,144 @@ const stars = new THREE.Points(starGeometry, starMaterial);
 scene.add(stars);
 
 /* ================================================================
-   The car — low-poly, built from primitives
+   The car — a low-poly Nissan GT-R in Bayside Blue
    ================================================================ */
 const car = new THREE.Group();
 car.position.set(TRACK_RADIUS, GROUND_Y, 2.5); // parked at the start line
 car.rotation.y = Math.PI;
 scene.add(car);
 
-const bodyMaterial = new THREE.MeshStandardMaterial({
-  color: 0xf6ad55,
-  metalness: 0.25,
-  roughness: 0.5,
+// Everything except the wheels, so the body can lean into turns
+const carBody = new THREE.Group();
+car.add(carBody);
+
+const paintMaterial = new THREE.MeshStandardMaterial({
+  color: 0x2b50d4, // Bayside Blue
+  metalness: 0.6,
+  roughness: 0.35,
   flatShading: true,
 });
-const cabinMaterial = new THREE.MeshStandardMaterial({
-  color: 0x16324a,
+const trimMaterial = new THREE.MeshStandardMaterial({
+  color: 0x0b0f16,
+  roughness: 0.7,
+  flatShading: true,
+});
+const glassMaterial = new THREE.MeshStandardMaterial({
+  color: 0x0a1420,
+  metalness: 0.6,
+  roughness: 0.3,
   emissive: 0x4fd1c5,
-  emissiveIntensity: 0.15,
-  metalness: 0.3,
-  roughness: 0.4,
-  flatShading: true,
-});
-const wheelMaterial = new THREE.MeshStandardMaterial({
-  color: 0x11151d,
-  roughness: 0.9,
+  emissiveIntensity: 0.04,
   flatShading: true,
 });
 
-const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.42, 2.4), bodyMaterial);
-body.position.y = 0.62;
-car.add(body);
+// Wide low body
+const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.42, 3.8), paintMaterial);
+chassis.position.y = 0.6;
+carBody.add(chassis);
 
-const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.4, 1.15), cabinMaterial);
-cabin.position.set(0, 1.0, -0.2);
-car.add(cabin);
+// Hood bulge (GT-R power dome)
+const hood = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 1.0), paintMaterial);
+hood.position.set(0, 0.84, 1.15);
+carBody.add(hood);
 
-const lightGeometry = new THREE.BoxGeometry(0.18, 0.12, 0.08);
+// Fastback greenhouse: tapered 4-sided prism → raked windshield & rear glass
+const cabinGeometry = new THREE.CylinderGeometry(0.62, 0.98, 0.44, 4, 1);
+cabinGeometry.rotateY(Math.PI / 4);
+const cabin = new THREE.Mesh(cabinGeometry, glassMaterial);
+cabin.scale.set(1.15, 1, 2.0);
+cabin.position.set(0, 1.01, -0.3);
+carBody.add(cabin);
+
+// Rear wing — the GT-R signature
+const wingPostGeometry = new THREE.BoxGeometry(0.08, 0.26, 0.1);
+[-0.55, 0.55].forEach((x) => {
+  const wingPost = new THREE.Mesh(wingPostGeometry, trimMaterial);
+  wingPost.position.set(x, 0.92, -1.76);
+  carBody.add(wingPost);
+});
+const wing = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.07, 0.44), trimMaterial);
+wing.position.set(0, 1.07, -1.8);
+carBody.add(wing);
+
+// Front splitter & rear diffuser
+const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.1, 0.3), trimMaterial);
+splitter.position.set(0, 0.34, 1.8);
+carBody.add(splitter);
+const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.12, 0.24), trimMaterial);
+diffuser.position.set(0, 0.35, -1.82);
+carBody.add(diffuser);
+
+// Slim headlights
+const headlightGeometry = new THREE.BoxGeometry(0.4, 0.09, 0.06);
 const headlightMaterial = new THREE.MeshStandardMaterial({
   color: 0xfff4cc,
   emissive: 0xfff4cc,
   emissiveIntensity: 1.4,
 });
-const taillightMaterial = new THREE.MeshStandardMaterial({
-  color: 0xff5544,
-  emissive: 0xff3322,
-  emissiveIntensity: 1.2,
-});
-[-0.42, 0.42].forEach((x) => {
-  const head = new THREE.Mesh(lightGeometry, headlightMaterial);
-  head.position.set(x, 0.62, 1.21);
-  car.add(head);
-  const tail = new THREE.Mesh(lightGeometry, taillightMaterial);
-  tail.position.set(x, 0.62, -1.21);
-  car.add(tail);
+[-0.55, 0.55].forEach((x) => {
+  const head = new THREE.Mesh(headlightGeometry, headlightMaterial);
+  head.position.set(x, 0.74, 1.91);
+  carBody.add(head);
 });
 
-// Wheels — axle baked along X so rotation.x rolls them
-const WHEEL_RADIUS = 0.34;
-const wheelGeometry = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.28, 14);
+// Quad round taillights — unmistakably GT-R
+const taillightGeometry = new THREE.CylinderGeometry(0.085, 0.085, 0.06, 12);
+taillightGeometry.rotateX(Math.PI / 2);
+const taillightMaterial = new THREE.MeshStandardMaterial({
+  color: 0xff5544,
+  emissive: 0xff2211,
+  emissiveIntensity: 1.5,
+});
+[-0.62, -0.38, 0.38, 0.62].forEach((x) => {
+  const tail = new THREE.Mesh(taillightGeometry, taillightMaterial);
+  tail.position.set(x, 0.72, -1.91);
+  carBody.add(tail);
+});
+
+// Quad exhaust tips
+const exhaustGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.14, 10);
+exhaustGeometry.rotateX(Math.PI / 2);
+const exhaustMaterial = new THREE.MeshStandardMaterial({
+  color: 0x8f98a3,
+  metalness: 0.9,
+  roughness: 0.3,
+});
+[-0.56, -0.42, 0.42, 0.56].forEach((x) => {
+  const exhaust = new THREE.Mesh(exhaustGeometry, exhaustMaterial);
+  exhaust.position.set(x, 0.38, -1.9);
+  carBody.add(exhaust);
+});
+
+// Wheels — axle baked along X so rotation.x rolls them; silver hubs
+const WHEEL_RADIUS = 0.37;
+const wheelGeometry = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.34, 16);
 wheelGeometry.rotateZ(Math.PI / 2);
+const hubGeometry = new THREE.CylinderGeometry(0.17, 0.17, 0.36, 8);
+hubGeometry.rotateZ(Math.PI / 2);
+const wheelMaterial = new THREE.MeshStandardMaterial({
+  color: 0x11151d,
+  roughness: 0.9,
+  flatShading: true,
+});
+const hubMaterial = new THREE.MeshStandardMaterial({
+  color: 0x9aa5b1,
+  metalness: 0.8,
+  roughness: 0.35,
+  flatShading: true,
+});
 
 const wheels = [];
 const frontPivots = [];
 [
-  { x: -0.72, z: 0.82, front: true },
-  { x: 0.72, z: 0.82, front: true },
-  { x: -0.72, z: -0.82, front: false },
-  { x: 0.72, z: -0.82, front: false },
+  { x: -0.82, z: 1.22, front: true },
+  { x: 0.82, z: 1.22, front: true },
+  { x: -0.82, z: -1.22, front: false },
+  { x: 0.82, z: -1.22, front: false },
 ].forEach(({ x, z, front }) => {
-  const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+  const wheel = new THREE.Group();
+  wheel.add(new THREE.Mesh(wheelGeometry, wheelMaterial));
+  wheel.add(new THREE.Mesh(hubGeometry, hubMaterial));
   const pivot = new THREE.Group();
   pivot.position.set(x, WHEEL_RADIUS, z);
   pivot.add(wheel);
@@ -438,9 +606,9 @@ joystickEl.addEventListener("pointermove", (event) => {
 });
 
 /* ---------------- car physics (simple kinematic model) ---------------- */
-const MAX_SPEED = 16;
+const MAX_SPEED = 18;
 const MAX_REVERSE = 7;
-const ACCELERATION = 24;
+const ACCELERATION = 26;
 const STEER_RATE = 2.1;
 
 let speed = 0;
@@ -502,17 +670,17 @@ function updateCar(dt, elapsed) {
     }
   });
 
-  // Cones: knock them flying
-  cones.forEach((cone) => {
-    if (cone.state !== "upright") return;
-    const dx = cone.mesh.position.x - car.position.x;
-    const dz = cone.mesh.position.z - car.position.z;
+  // Knockables: send them flying
+  knockables.forEach((item) => {
+    if (item.state !== "upright") return;
+    const dx = item.mesh.position.x - car.position.x;
+    const dz = item.mesh.position.z - car.position.z;
     const d = Math.hypot(dx, dz);
-    if (d < CAR_RADIUS + 0.34 && Math.abs(speed) > 0.5) {
-      cone.state = "flying";
-      const kick = 2 + Math.abs(speed) * 0.55;
-      cone.vel.set((dx / d) * kick, 2.2 + Math.abs(speed) * 0.14, (dz / d) * kick);
-      cone.angVel.set(rand(-8, 8), 0, rand(-8, 8));
+    if (d < CAR_RADIUS + item.r && Math.abs(speed) > 0.5) {
+      item.state = "flying";
+      const kick = (2 + Math.abs(speed) * 0.55) * item.kick;
+      item.vel.set((dx / d) * kick, (2.2 + Math.abs(speed) * 0.14) * item.kick, (dz / d) * kick);
+      item.angVel.set(rand(-item.spin, item.spin), 0, rand(-item.spin, item.spin));
       speed *= 0.94;
     }
   });
@@ -528,28 +696,26 @@ function updateCar(dt, elapsed) {
   });
 
   // Subtle body lean into turns
-  body.rotation.z = -steerVisual * speedFactor * 0.12;
-  cabin.rotation.z = body.rotation.z;
+  carBody.rotation.z = -steerVisual * speedFactor * 0.12;
 }
 
-function updateCones(dt) {
-  cones.forEach((cone) => {
-    if (cone.state !== "flying") return;
-    cone.vel.y -= 14 * dt;
-    cone.mesh.position.addScaledVector(cone.vel, dt);
-    cone.mesh.rotation.x += cone.angVel.x * dt;
-    cone.mesh.rotation.z += cone.angVel.z * dt;
-    const restY = GROUND_Y + 0.3;
-    if (cone.mesh.position.y < restY) {
-      cone.mesh.position.y = restY;
-      if (Math.abs(cone.vel.y) < 1.5) {
-        cone.state = "down";
-        cone.vel.set(0, 0, 0);
+function updateKnockables(dt) {
+  knockables.forEach((item) => {
+    if (item.state !== "flying") return;
+    item.vel.y -= 14 * dt;
+    item.mesh.position.addScaledVector(item.vel, dt);
+    item.mesh.rotation.x += item.angVel.x * dt;
+    item.mesh.rotation.z += item.angVel.z * dt;
+    if (item.mesh.position.y < item.restY) {
+      item.mesh.position.y = item.restY;
+      if (Math.abs(item.vel.y) < 1.5) {
+        item.state = "down";
+        item.vel.set(0, 0, 0);
       } else {
-        cone.vel.y *= -0.4;
-        cone.vel.x *= 0.6;
-        cone.vel.z *= 0.6;
-        cone.angVel.multiplyScalar(0.6);
+        item.vel.y *= -0.4;
+        item.vel.x *= 0.6;
+        item.vel.z *= 0.6;
+        item.angVel.multiplyScalar(0.6);
       }
     }
   });
@@ -567,6 +733,12 @@ const MAP_LOGICAL = 132;
 }
 const MAP_C = MAP_LOGICAL / 2;
 const MAP_SCALE = (MAP_C - 6) / WORLD_RADIUS;
+
+const KNOCKABLE_MAP_COLORS = {
+  cone: "rgba(232, 131, 58, 0.85)",
+  barrel: "rgba(197, 48, 48, 0.9)",
+  crate: "rgba(156, 107, 53, 0.9)",
+};
 
 function mapArc(radius, strokeStyle, lineWidth) {
   mapCtx.strokeStyle = strokeStyle;
@@ -601,22 +773,29 @@ function drawMinimap() {
   mapCtx.arc(MAP_C, MAP_C, 3, 0, Math.PI * 2);
   mapCtx.fill();
 
-  // Rocks
-  mapCtx.fillStyle = "rgba(148, 163, 184, 0.6)";
+  // Solid obstacles: rocks as dots, tire stacks as rings
   solidObstacles.forEach((ob) => {
-    if (ob.type !== "rock") return;
-    mapCtx.beginPath();
-    mapCtx.arc(MAP_C + ob.x * MAP_SCALE, MAP_C + ob.z * MAP_SCALE, Math.max(1.4, ob.r * MAP_SCALE), 0, Math.PI * 2);
-    mapCtx.fill();
+    if (ob.type === "rock") {
+      mapCtx.fillStyle = "rgba(148, 163, 184, 0.6)";
+      mapCtx.beginPath();
+      mapCtx.arc(MAP_C + ob.x * MAP_SCALE, MAP_C + ob.z * MAP_SCALE, Math.max(1.4, ob.r * MAP_SCALE), 0, Math.PI * 2);
+      mapCtx.fill();
+    } else if (ob.type === "tire") {
+      mapCtx.strokeStyle = "rgba(148, 163, 184, 0.8)";
+      mapCtx.lineWidth = 1.2;
+      mapCtx.beginPath();
+      mapCtx.arc(MAP_C + ob.x * MAP_SCALE, MAP_C + ob.z * MAP_SCALE, 2, 0, Math.PI * 2);
+      mapCtx.stroke();
+    }
   });
 
-  // Cones
-  mapCtx.fillStyle = "rgba(232, 131, 58, 0.85)";
-  cones.forEach((cone) => {
+  // Knockables, colored by type
+  knockables.forEach((item) => {
+    mapCtx.fillStyle = KNOCKABLE_MAP_COLORS[item.type];
     mapCtx.beginPath();
     mapCtx.arc(
-      MAP_C + cone.mesh.position.x * MAP_SCALE,
-      MAP_C + cone.mesh.position.z * MAP_SCALE,
+      MAP_C + item.mesh.position.x * MAP_SCALE,
+      MAP_C + item.mesh.position.z * MAP_SCALE,
       1.4,
       0,
       Math.PI * 2
@@ -706,7 +885,7 @@ if (import.meta.env.DEV) {
     car,
     keys,
     joystick,
-    cones,
+    knockables,
     reducedMotion,
     get speed() {
       return speed;
@@ -739,7 +918,7 @@ function renderScene(elapsed, dt) {
 
   if (dt > 0) {
     updateCar(dt, elapsed);
-    updateCones(dt);
+    updateKnockables(dt);
     updateCamera(dt);
     setDrivingUi(elapsed < driveActiveUntil);
   }

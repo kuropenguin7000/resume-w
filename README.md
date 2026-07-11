@@ -2,7 +2,7 @@
 
 Personal portfolio website of **Rafi Saeful Rahman**, Software Engineer (Senior Java Backend), built from my résumé.
 
-An interactive 3D playground runs behind the content: drive a low-poly car around a glowing race track, knock over traffic cones, dodge rocks, and follow yourself on the minimap — all beneath a floating "service network" (nodes and connections, a nod to backend & distributed systems work). While you drive, the page content fades out so you can see the world; stop and it fades back in.
+An interactive 3D playground runs behind the content: drive a low-poly Nissan GT-R around a glowing race track, smash through cones, barrels and crates, bounce off rocks and tire stacks, and follow yourself on the minimap — all beneath a floating "service network" (nodes and connections, a nod to backend & distributed systems work). While you drive, the page content fades out so you can see the world; stop and it fades back in.
 
 ## Controls
 
