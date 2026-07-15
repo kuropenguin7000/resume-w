@@ -51,10 +51,11 @@ const grid = new THREE.GridHelper(320, 160, 0x2a5a5f, 0x11202e);
 grid.position.y = GROUND_Y;
 scene.add(grid);
 
-// Opaque floor just under the grid so stars don't show below the horizon
+// Opaque floor just under the grid so stars don't show below the horizon.
+// Lit material (not Basic) so headlights and street lamps show on the ground.
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(700, 700),
-  new THREE.MeshBasicMaterial({ color: 0x05070f })
+  new THREE.MeshStandardMaterial({ color: 0x05070f, roughness: 0.95 })
 );
 floor.rotation.x = -Math.PI / 2;
 floor.position.y = GROUND_Y - 0.03;
@@ -81,8 +82,22 @@ const flatRing = (inner, outer, color, y, opacity = 1, thetaStart = 0, thetaLeng
   return mesh;
 };
 
-// Asphalt surface + edge lines
-flatRing(TRACK_INNER, TRACK_OUTER, 0x0a1420, GROUND_Y + 0.02, 0.92);
+// Asphalt surface — lit material so headlights and street lamps pool on it
+const asphalt = new THREE.Mesh(
+  new THREE.RingGeometry(TRACK_INNER, TRACK_OUTER, 96),
+  new THREE.MeshStandardMaterial({
+    color: 0x0e1a28,
+    roughness: 0.9,
+    transparent: true,
+    opacity: 0.92,
+    side: THREE.DoubleSide,
+  })
+);
+asphalt.rotation.x = -Math.PI / 2;
+asphalt.position.y = GROUND_Y + 0.02;
+scene.add(asphalt);
+
+// Edge lines
 flatRing(TRACK_INNER - 0.2, TRACK_INNER + 0.1, 0x3f8f8f, GROUND_Y + 0.03);
 flatRing(TRACK_OUTER - 0.1, TRACK_OUTER + 0.2, 0x3f8f8f, GROUND_Y + 0.03);
 
@@ -213,6 +228,64 @@ addTireStack(27.2, 0.85);
 addTireStack(27.4, 2.7);
 addTireStack(16.6, 4.0);
 addTireStack(27.0, 5.4);
+
+// --- street lamps on the outer edge, arms reaching over the track.
+// Poles are solid; each lamp is a real PointLight (lights the car driving
+// under it) plus a faint additive disc so the pool reads on dark asphalt.
+const lampPoleMaterial = new THREE.MeshStandardMaterial({
+  color: 0x2a3442,
+  roughness: 0.6,
+  flatShading: true,
+});
+const lampHeadMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffd9a0,
+  emissive: 0xffc37a,
+  emissiveIntensity: 1.6,
+  flatShading: true,
+});
+const lampPoolMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffc37a,
+  transparent: true,
+  opacity: 0.08,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const LAMP_HEIGHT = 4.6;
+const lampPoleGeometry = new THREE.CylinderGeometry(0.09, 0.13, LAMP_HEIGHT, 6);
+const lampArmGeometry = new THREE.BoxGeometry(2.2, 0.09, 0.09);
+const lampHeadGeometry = new THREE.BoxGeometry(0.55, 0.12, 0.26);
+const lampPoolGeometry = new THREE.CircleGeometry(3.4, 24);
+
+function addStreetLamp(radius, theta) {
+  const lamp = new THREE.Group();
+
+  const pole = new THREE.Mesh(lampPoleGeometry, lampPoleMaterial);
+  pole.position.y = LAMP_HEIGHT / 2;
+  lamp.add(pole);
+
+  const arm = new THREE.Mesh(lampArmGeometry, lampPoleMaterial);
+  arm.position.set(-1.1, LAMP_HEIGHT, 0);
+  lamp.add(arm);
+
+  const head = new THREE.Mesh(lampHeadGeometry, lampHeadMaterial);
+  head.position.set(-2.0, LAMP_HEIGHT - 0.04, 0);
+  lamp.add(head);
+
+  const glow = new THREE.PointLight(0xffc37a, 60, 18, 2);
+  glow.position.set(-2.0, LAMP_HEIGHT - 0.3, 0);
+  lamp.add(glow);
+
+  const pool = new THREE.Mesh(lampPoolGeometry, lampPoolMaterial);
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(-2.0, 0.06, 0);
+  lamp.add(pool);
+
+  lamp.position.set(Math.cos(theta) * radius, GROUND_Y, Math.sin(theta) * radius);
+  lamp.rotation.y = -theta; // local -x points at the track center
+  scene.add(lamp);
+  solidObstacles.push({ x: lamp.position.x, z: lamp.position.z, r: 0.5, type: "lamp" });
+}
+[0.3, 1.75, 3.3, 4.7].forEach((theta) => addStreetLamp(27.3, theta));
 
 // --- knockable traffic cones along the track edges
 const coneGeometry = new THREE.ConeGeometry(0.34, 0.8, 10);
@@ -463,13 +536,21 @@ const headlightGeometry = new THREE.BoxGeometry(0.4, 0.09, 0.06);
 const headlightMaterial = new THREE.MeshStandardMaterial({
   color: 0xfff4cc,
   emissive: 0xfff4cc,
-  emissiveIntensity: 1.4,
+  emissiveIntensity: 2.2,
 });
 [-0.55, 0.55].forEach((x) => {
   const head = new THREE.Mesh(headlightGeometry, headlightMaterial);
   head.position.set(x, 0.74, 1.91);
   carBody.add(head);
 });
+
+// Headlamp beam — one shared spotlight (cheaper than two) lighting the road
+const headlamp = new THREE.SpotLight(0xffeecb, 120, 34, Math.PI / 7, 0.55, 1.7);
+headlamp.position.set(0, 0.74, 1.85);
+const headlampTarget = new THREE.Object3D();
+headlampTarget.position.set(0, -0.6, 11);
+carBody.add(headlamp, headlampTarget);
+headlamp.target = headlampTarget;
 
 // Quad round taillights — unmistakably GT-R
 const taillightGeometry = new THREE.CylinderGeometry(0.085, 0.085, 0.06, 12);
@@ -560,7 +641,8 @@ window.addEventListener("keyup", (event) => {
   if (action) keys[action] = false;
 });
 
-// Virtual joystick (touch devices) — MMORPG style
+// Virtual joystick (touch devices) — direction-based: the stick points
+// where the car should go on screen, regardless of the car's heading.
 const joystick = { x: 0, y: 0 };
 const joystickEl = document.getElementById("joystick");
 const thumbEl = document.getElementById("joystick-thumb");
@@ -617,11 +699,44 @@ let steerVisual = 0;
 let wheelSpin = 0;
 let driveActiveUntil = -1;
 
+function wrapAngle(a) {
+  return THREE.MathUtils.euclideanModulo(a + Math.PI, Math.PI * 2) - Math.PI;
+}
+
+// The follow camera never rotates, so screen directions map to fixed world
+// directions: stick up = -z, stick right = +x. The car steers toward the
+// stick direction; pushing roughly behind the nose backs the car up
+// (hysteresis between the two thresholds stops it flip-flopping).
+const JOY_DEADZONE = 0.18;
+let joyReverse = false;
+
+function joystickInputs() {
+  const mag = Math.hypot(joystick.x, joystick.y);
+  if (mag < JOY_DEADZONE) {
+    joyReverse = false; // each fresh push starts in forward mode
+    return null;
+  }
+  const desired = Math.atan2(joystick.x, joystick.y);
+  const diff = wrapAngle(desired - heading);
+  if (joyReverse) {
+    if (Math.abs(diff) < Math.PI * 0.5) joyReverse = false;
+  } else if (Math.abs(diff) > Math.PI * 0.58) {
+    joyReverse = true;
+  }
+  if (!joyReverse) {
+    return { throttle: mag, steer: THREE.MathUtils.clamp(diff / 0.5, -1, 1) };
+  }
+  const back = wrapAngle(diff - Math.PI);
+  return { throttle: -mag, steer: -THREE.MathUtils.clamp(back / 0.5, -1, 1) };
+}
+
 function driveInputs() {
-  let throttle = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0);
-  let steer = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
-  if (throttle === 0 && Math.abs(joystick.y) > 0.18) throttle = -joystick.y;
-  if (steer === 0 && Math.abs(joystick.x) > 0.18) steer = -joystick.x;
+  const throttle = (keys.forward ? 1 : 0) - (keys.back ? 1 : 0);
+  const steer = (keys.left ? 1 : 0) - (keys.right ? 1 : 0);
+  if (throttle === 0 && steer === 0) {
+    const joy = joystickInputs();
+    if (joy) return joy;
+  }
   return { throttle, steer };
 }
 
@@ -786,6 +901,11 @@ function drawMinimap() {
       mapCtx.beginPath();
       mapCtx.arc(MAP_C + ob.x * MAP_SCALE, MAP_C + ob.z * MAP_SCALE, 2, 0, Math.PI * 2);
       mapCtx.stroke();
+    } else if (ob.type === "lamp") {
+      mapCtx.fillStyle = "rgba(246, 173, 85, 0.9)";
+      mapCtx.beginPath();
+      mapCtx.arc(MAP_C + ob.x * MAP_SCALE, MAP_C + ob.z * MAP_SCALE, 1.6, 0, Math.PI * 2);
+      mapCtx.fill();
     }
   });
 
@@ -863,14 +983,24 @@ const lookCurrent = new THREE.Vector3(car.position.x, GROUND_Y + 2.6, car.positi
 camera.position.copy(car.position).add(CAMERA_OFFSET);
 camera.lookAt(lookCurrent);
 
+const CAMERA_DAMP = 3.2;
+
 function updateCamera(dt) {
+  // Feed the car's velocity forward: an exponential lerp chasing a moving
+  // target trails it by velocity/damp, which pushed the car off-center at
+  // speed (worst when driving across the screen). Aiming that far ahead
+  // cancels the steady-state lag while keeping the smoothing.
+  const leadX = (Math.sin(heading) * speed) / CAMERA_DAMP;
+  const leadZ = (Math.cos(heading) * speed) / CAMERA_DAMP;
+
   cameraGoal.copy(car.position).add(CAMERA_OFFSET);
-  cameraGoal.x += pointer.x * 1.1;
+  cameraGoal.x += leadX + pointer.x * 1.1;
   cameraGoal.y += -pointer.y * 0.7;
+  cameraGoal.z += leadZ;
 
-  lookGoal.set(car.position.x, GROUND_Y + 2.6, car.position.z);
+  lookGoal.set(car.position.x + leadX, GROUND_Y + 2.6, car.position.z + leadZ);
 
-  const damp = 1 - Math.exp(-3.2 * dt);
+  const damp = 1 - Math.exp(-CAMERA_DAMP * dt);
   camera.position.lerp(cameraGoal, damp);
   lookCurrent.lerp(lookGoal, damp);
   camera.lookAt(lookCurrent);
