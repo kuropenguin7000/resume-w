@@ -1071,12 +1071,18 @@ if (reducedMotion) {
    Page behaviour
    ================================================================ */
 
-// Fade out loader once everything is ready
-window.addEventListener("load", () => {
+// Fade out loader, then play the Mr. Bean-style spotlight opening: a small
+// warm lamp flickers on and slowly widens to reveal the scene. Runs once.
+let introStarted = false;
+function startIntro() {
   document.getElementById("loader").classList.add("done");
-});
+  if (introStarted || reducedMotion) return;
+  introStarted = true;
+  document.body.classList.add("intro-play");
+}
+window.addEventListener("load", startIntro);
 // Fallback in case load already fired or hangs on slow assets
-setTimeout(() => document.getElementById("loader").classList.add("done"), 2500);
+setTimeout(startIntro, 2500);
 
 // Reveal-on-scroll
 const revealables = document.querySelectorAll(".reveal");

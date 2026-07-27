@@ -80,6 +80,78 @@ body {
   }
 }
 
+/* ---------- intro spotlight (Mr. Bean style opening) ---------- */
+/* @property lets the radial-gradient radius animate smoothly. */
+@property --spot {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
+#intro {
+  position: fixed;
+  inset: 0;
+  z-index: 60; /* above the loader */
+  pointer-events: none;
+  --spot: 0%;
+  /* A warm circle of light with a soft glowing aura ring, surrounded by
+     near-black. Animating --spot grows the lit circle outward. */
+  background:
+    radial-gradient(
+      circle at 50% 44%,
+      transparent 0,
+      transparent var(--spot),
+      rgba(246, 208, 130, 0.5) calc(var(--spot) + 1.4%),
+      rgba(246, 173, 85, 0.12) calc(var(--spot) + 7%),
+      rgba(3, 4, 12, 0.92) calc(var(--spot) + 18%),
+      #010208 calc(var(--spot) + 32%)
+    );
+}
+
+body.intro-play #intro {
+  animation: introSpot 3.8s cubic-bezier(0.62, 0, 0.2, 1) forwards;
+}
+
+@keyframes introSpot {
+  0% {
+    --spot: 0%;
+    opacity: 1;
+  }
+  /* lamp clicks on with a quick flicker */
+  6% {
+    --spot: 3.5%;
+    opacity: 1;
+  }
+  9% {
+    --spot: 1.4%;
+    opacity: 1;
+  }
+  13% {
+    --spot: 4.5%;
+    opacity: 1;
+  }
+  /* a small, pointed spotlight — holds for a beat */
+  40% {
+    --spot: 11%;
+    opacity: 1;
+  }
+  /* then slowly opens wide */
+  86% {
+    --spot: 90%;
+    opacity: 1;
+  }
+  100% {
+    --spot: 150%;
+    opacity: 0;
+  }
+}
+
+/* Skip the whole intro when the loader never plays / motion is reduced */
+body:not(.intro-play) #intro {
+  /* stay dark & holding until JS starts the animation */
+  --spot: 0%;
+}
+
 /* ---------- 3D canvas ---------- */
 #webgl {
   position: fixed;
@@ -717,5 +789,9 @@ main {
   .wheel,
   .loader-dot {
     animation: none;
+  }
+
+  #intro {
+    display: none;
   }
 }
