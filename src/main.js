@@ -1078,6 +1078,23 @@ function startIntro() {
   document.getElementById("loader").classList.add("done");
   if (introStarted || reducedMotion) return;
   introStarted = true;
+  // Aim the spotlight at the car's current position on screen so the light
+  // ignites on the car, then spreads out to fill the whole screen.
+  const intro = document.getElementById("intro");
+  camera.updateMatrixWorld(true);
+  camera.updateProjectionMatrix();
+  const p = car.position.clone();
+  p.y += 1.2; // aim at the car body, not the ground under it
+  p.project(camera);
+  let x = (p.x * 0.5 + 0.5) * 100;
+  let y = (-p.y * 0.5 + 0.5) * 100;
+  // Guard against a not-yet-ready camera; keep the point comfortably on screen.
+  if (!Number.isFinite(x)) x = 50;
+  if (!Number.isFinite(y)) y = 46;
+  x = Math.min(80, Math.max(20, x));
+  y = Math.min(72, Math.max(30, y));
+  intro.style.setProperty("--spot-x", `${x.toFixed(2)}%`);
+  intro.style.setProperty("--spot-y", `${y.toFixed(2)}%`);
   document.body.classList.add("intro-play");
 }
 window.addEventListener("load", startIntro);

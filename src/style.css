@@ -94,22 +94,53 @@ body {
   z-index: 60; /* above the loader */
   pointer-events: none;
   --spot: 0%;
-  /* A warm circle of light with a soft glowing aura ring, surrounded by
-     near-black. Animating --spot grows the lit circle outward. */
+  /* JS aims these at the car's on-screen position; center is the fallback. */
+  --spot-x: 50%;
+  --spot-y: 46%;
+  /* A hot golden circle of light surrounded by near-black. Animating --spot
+     grows the lit circle outward from the point aimed at the car. */
   background:
     radial-gradient(
-      circle at 50% 44%,
-      transparent 0,
+      circle at var(--spot-x) var(--spot-y),
+      rgba(255, 253, 240, 0) 0,
       transparent var(--spot),
-      rgba(246, 208, 130, 0.5) calc(var(--spot) + 1.4%),
-      rgba(246, 173, 85, 0.12) calc(var(--spot) + 7%),
-      rgba(3, 4, 12, 0.92) calc(var(--spot) + 18%),
-      #010208 calc(var(--spot) + 32%)
+      rgba(255, 244, 190, 0.7) calc(var(--spot) + 1.2%),
+      rgba(255, 209, 60, 0.4) calc(var(--spot) + 5%),
+      rgba(246, 173, 85, 0.12) calc(var(--spot) + 12%),
+      rgba(3, 4, 12, 0.94) calc(var(--spot) + 21%),
+      #010208 calc(var(--spot) + 34%)
+    );
+}
+
+/* Super-Saiyan-style aura: a golden energy glow that flares and pulses
+   around the spot while the light charges up on the car. */
+#intro::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform-origin: var(--spot-x) var(--spot-y);
+  mix-blend-mode: screen;
+  filter: blur(7px);
+  opacity: 0;
+  background:
+    radial-gradient(
+      circle at var(--spot-x) var(--spot-y),
+      rgba(255, 250, 214, 0.85) 0,
+      rgba(255, 224, 92, 0.5) calc(var(--spot) + 4%),
+      rgba(255, 184, 40, 0.25) calc(var(--spot) + 12%),
+      rgba(255, 150, 20, 0) calc(var(--spot) + 30%)
     );
 }
 
 body.intro-play #intro {
-  animation: introSpot 3.8s cubic-bezier(0.62, 0, 0.2, 1) forwards;
+  animation: introSpot 4.2s cubic-bezier(0.62, 0, 0.2, 1) forwards;
+}
+
+body.intro-play #intro::before {
+  /* fade the aura in, then let it flicker like flaring energy */
+  animation:
+    auraIn 0.6s ease-out forwards,
+    auraFlare 0.42s steps(2, jump-none) 0.6s infinite alternate;
 }
 
 @keyframes introSpot {
@@ -117,32 +148,52 @@ body.intro-play #intro {
     --spot: 0%;
     opacity: 1;
   }
-  /* lamp clicks on with a quick flicker */
-  6% {
-    --spot: 3.5%;
+  /* spark ignites on the car with a quick flicker */
+  5% {
+    --spot: 2.6%;
     opacity: 1;
   }
-  9% {
-    --spot: 1.4%;
+  8% {
+    --spot: 1.2%;
     opacity: 1;
   }
-  13% {
-    --spot: 4.5%;
+  12% {
+    --spot: 3.6%;
     opacity: 1;
   }
-  /* a small, pointed spotlight — holds for a beat */
-  40% {
-    --spot: 11%;
+  /* charge up: a tight aura holds on the car for a beat */
+  50% {
+    --spot: 7%;
     opacity: 1;
   }
-  /* then slowly opens wide */
-  86% {
-    --spot: 90%;
+  /* then bursts outward to fill the whole screen */
+  90% {
+    --spot: 96%;
     opacity: 1;
   }
   100% {
-    --spot: 150%;
+    --spot: 165%;
     opacity: 0;
+  }
+}
+
+@keyframes auraIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
+@keyframes auraFlare {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.07);
   }
 }
 
