@@ -14,9 +14,15 @@
     />
   </head>
   <body>
-    <div id="loader" aria-hidden="true"><span class="loader-dot"></span> loading</div>
-
-    <div id="intro" aria-hidden="true"></div>
+    <div id="intro">
+      <div class="intro-ring" aria-hidden="true"></div>
+      <div class="intro-loader" aria-hidden="true"></div>
+      <p class="intro-loading" aria-hidden="true">Loading</p>
+      <p class="intro-hint" aria-hidden="true">
+        <span class="intro-arrow">&uarr;</span>
+        <span>Click to start</span>
+      </p>
+    </div>
 
     <canvas id="webgl" aria-hidden="true"></canvas>
 

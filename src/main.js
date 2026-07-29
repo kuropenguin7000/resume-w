@@ -552,6 +552,43 @@ headlampTarget.position.set(0, -0.6, 11);
 carBody.add(headlamp, headlampTarget);
 headlamp.target = headlampTarget;
 
+// Visible volumetric headlight cones (Bruno-Simon style): a translucent,
+// additive-blended shell per headlight that reads as a shaft of light — the
+// SpotLight above only pools on the road, this is the beam you actually see.
+function makeHeadlightBeam() {
+  const H = 13; // beam length
+  const R = 2.2; // spread at the far end
+  const geo = new THREE.ConeGeometry(R, H, 28, 1, true); // open-ended shell
+  geo.translate(0, -H / 2, 0); // move apex (tip) to the local origin
+  geo.rotateX(-Math.PI / 2); // aim the cone down +z (the car's forward axis)
+  // Fade the beam from bright at the headlight to nothing at the far end.
+  const pos = geo.attributes.position;
+  const colors = [];
+  const tint = new THREE.Color(0xfff2cf);
+  for (let i = 0; i < pos.count; i += 1) {
+    const t = THREE.MathUtils.clamp(pos.getZ(i) / H, 0, 1);
+    const k = Math.pow(1 - t, 1.6);
+    colors.push(tint.r * k, tint.g * k, tint.b * k);
+  }
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.18,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: false,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+[-0.55, 0.55].forEach((x) => {
+  const beam = makeHeadlightBeam();
+  beam.position.set(x, 0.72, 1.95); // at the headlight, pointing forward
+  beam.rotation.x = 0.06; // dip slightly toward the road
+  carBody.add(beam);
+});
+
 // Quad round taillights — unmistakably GT-R
 const taillightGeometry = new THREE.CylinderGeometry(0.085, 0.085, 0.06, 12);
 taillightGeometry.rotateX(Math.PI / 2);
@@ -980,6 +1017,10 @@ const cameraGoal = new THREE.Vector3();
 const lookGoal = new THREE.Vector3();
 const lookCurrent = new THREE.Vector3(car.position.x, GROUND_Y + 2.6, car.position.z);
 
+// "Click to start" gate: the scene sits behind a dark spotlight overlay until
+// the user clicks. `started` unlocks driving. Reduced motion skips the gate.
+let started = reducedMotion;
+
 camera.position.copy(car.position).add(CAMERA_OFFSET);
 camera.lookAt(lookCurrent);
 
@@ -1047,10 +1088,14 @@ function renderScene(elapsed, dt) {
   stars.rotation.y = elapsed * 0.008;
 
   if (dt > 0) {
-    updateCar(dt, elapsed);
-    updateKnockables(dt);
+    // Driving is locked until the user clicks to start; the camera still
+    // smooths so the idle framing stays centered on the car.
+    if (started) {
+      updateCar(dt, elapsed);
+      updateKnockables(dt);
+      setDrivingUi(elapsed < driveActiveUntil);
+    }
     updateCamera(dt);
-    setDrivingUi(elapsed < driveActiveUntil);
   }
 
   drawMinimap();
@@ -1071,35 +1116,59 @@ if (reducedMotion) {
    Page behaviour
    ================================================================ */
 
-// Fade out loader, then play the Mr. Bean-style spotlight opening: a small
-// warm lamp flickers on and slowly widens to reveal the scene. Runs once.
-let introStarted = false;
-function startIntro() {
-  document.getElementById("loader").classList.add("done");
-  if (introStarted || reducedMotion) return;
-  introStarted = true;
-  // Aim the spotlight at the car's current position on screen so the light
-  // ignites on the car, then spreads out to fill the whole screen.
-  const intro = document.getElementById("intro");
-  camera.updateMatrixWorld(true);
-  camera.updateProjectionMatrix();
+// "Click to start" opening (Bruno-Simon style): the scene sits dark behind a
+// spotlight circle on the car; clicking (or any key / tap) opens the circle
+// out from the car to reveal everything and unlocks driving. Runs once.
+const introEl = document.getElementById("intro");
+
+// Center the spotlight circle on the car's on-screen position.
+function positionSpotlight() {
+  if (!introEl) return;
+  camera.updateMatrixWorld(true); // also refreshes matrixWorldInverse
   const p = car.position.clone();
-  p.y += 1.2; // aim at the car body, not the ground under it
+  p.y += 0.6; // aim at the car body
   p.project(camera);
   let x = (p.x * 0.5 + 0.5) * 100;
   let y = (-p.y * 0.5 + 0.5) * 100;
-  // Guard against a not-yet-ready camera; keep the point comfortably on screen.
   if (!Number.isFinite(x)) x = 50;
-  if (!Number.isFinite(y)) y = 46;
-  x = Math.min(80, Math.max(20, x));
-  y = Math.min(72, Math.max(30, y));
-  intro.style.setProperty("--spot-x", `${x.toFixed(2)}%`);
-  intro.style.setProperty("--spot-y", `${y.toFixed(2)}%`);
-  document.body.classList.add("intro-play");
+  if (!Number.isFinite(y)) y = 58;
+  x = Math.min(72, Math.max(28, x));
+  y = Math.min(70, Math.max(38, y));
+  introEl.style.setProperty("--cx", `${x.toFixed(2)}%`);
+  introEl.style.setProperty("--cy", `${y.toFixed(2)}%`);
 }
-window.addEventListener("load", startIntro);
-// Fallback in case load already fired or hangs on slow assets
-setTimeout(startIntro, 2500);
+
+const INTRO_DELAY_MS = 2800; // loading phase before "Click to start" appears
+let ready = reducedMotion;
+let revealed = false;
+
+function markReady() {
+  if (ready) return;
+  ready = true;
+  if (introEl) introEl.classList.add("intro-ready"); // swap loader -> hint
+}
+function startReveal() {
+  if (revealed || !ready) return; // can't start until the loading delay passes
+  revealed = true;
+  started = true; // unlock driving
+  if (introEl) introEl.classList.add("intro-started");
+  window.removeEventListener("keydown", onIntroKey, true);
+}
+function onIntroKey(event) {
+  if (event.key === "Tab") return; // keep keyboard nav working before start
+  startReveal();
+}
+
+if (reducedMotion) {
+  started = true; // no gate; CSS hides #intro so the scene shows immediately
+} else {
+  positionSpotlight();
+  window.addEventListener("resize", positionSpotlight);
+  setTimeout(markReady, INTRO_DELAY_MS);
+  if (introEl) introEl.addEventListener("click", startReveal);
+  window.addEventListener("keydown", onIntroKey, true);
+  window.addEventListener("touchstart", startReveal, { passive: true });
+}
 
 // Reveal-on-scroll
 const revealables = document.querySelectorAll(".reveal");
