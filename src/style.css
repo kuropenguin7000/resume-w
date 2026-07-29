@@ -63,7 +63,7 @@ body {
   transition:
     transform 1.15s cubic-bezier(0.6, 0, 0.2, 1),
     opacity 1.15s ease;
-  animation: introOpen 1.9s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
+  animation: introOpen 1s cubic-bezier(0.2, 0.75, 0.2, 1) forwards;
   background:
     radial-gradient(
       ellipse calc(var(--rx) * 0.8) calc(var(--ry) * 0.8) at var(--cx) var(--cy),

@@ -129,6 +129,25 @@ startLine.rotation.x = -Math.PI / 2;
 startLine.position.set(TRACK_RADIUS, GROUND_Y + 0.04, 0);
 scene.add(startLine);
 
+// Solid obstacles can't be knocked away, so they need to be *seen* in the dark.
+// A slightly enlarged back-face shell rendered additively reads as a glowing
+// rim/outline around the silhouette; fog is off so even distant ones show.
+const rimGlowMaterial = new THREE.MeshBasicMaterial({
+  color: 0x4fd1c5,
+  side: THREE.BackSide,
+  transparent: true,
+  opacity: 0.6,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: false,
+});
+function addRimGlow(mesh, scale = 1.14) {
+  const shell = new THREE.Mesh(mesh.geometry, rimGlowMaterial);
+  shell.scale.setScalar(scale);
+  mesh.add(shell);
+  return shell;
+}
+
 // Start gate: two posts + banner
 const postMaterial = new THREE.MeshStandardMaterial({
   color: 0xf6ad55,
@@ -145,6 +164,7 @@ const postGeometry = new THREE.BoxGeometry(0.32, 2.4, 0.32);
 [TRACK_INNER + 0.2, TRACK_OUTER - 0.2].forEach((x) => {
   const post = new THREE.Mesh(postGeometry, postMaterial);
   post.position.set(x, GROUND_Y + 1.2, 0);
+  addRimGlow(post, 1.1);
   scene.add(post);
 });
 const banner = new THREE.Mesh(
@@ -184,7 +204,7 @@ const rockGeometry = new THREE.IcosahedronGeometry(1, 0);
 const rockMaterial = new THREE.MeshStandardMaterial({
   color: 0x13273a,
   emissive: 0x4fd1c5,
-  emissiveIntensity: 0.08,
+  emissiveIntensity: 0.22,
   flatShading: true,
   roughness: 0.8,
 });
@@ -194,6 +214,7 @@ function addRock(radius, angle, s) {
   rock.position.set(Math.cos(angle) * radius, GROUND_Y + s * 0.55, Math.sin(angle) * radius);
   rock.scale.setScalar(s);
   rock.rotation.set(rand(0, Math.PI), rand(0, Math.PI), 0);
+  addRimGlow(rock);
   scene.add(rock);
   solidObstacles.push({ x: rock.position.x, z: rock.position.z, r: s * 0.95, type: "rock" });
 }
@@ -208,6 +229,8 @@ solidObstacles.push({ x: TRACK_OUTER - 0.2, z: 0, r: 0.45, type: "post" });
 const tireGeometry = new THREE.TorusGeometry(0.46, 0.17, 8, 18);
 const tireMaterial = new THREE.MeshStandardMaterial({
   color: 0x1a212c,
+  emissive: 0x4fd1c5,
+  emissiveIntensity: 0.12,
   roughness: 0.95,
   flatShading: true,
 });
@@ -218,6 +241,7 @@ function addTireStack(radius, theta) {
     tire.rotation.x = Math.PI / 2;
     tire.rotation.z = rand(0, Math.PI);
     tire.position.y = 0.17 + i * 0.34;
+    addRimGlow(tire, 1.18);
     stack.add(tire);
   }
   stack.position.set(Math.cos(theta) * radius, GROUND_Y, Math.sin(theta) * radius);
@@ -1138,7 +1162,7 @@ function positionSpotlight() {
   introEl.style.setProperty("--cy", `${y.toFixed(2)}%`);
 }
 
-const INTRO_DELAY_MS = 2800; // loading phase before "Click to start" appears
+const INTRO_DELAY_MS = 1100; // short loading phase before "Click to start" appears
 let ready = reducedMotion;
 let revealed = false;
 
