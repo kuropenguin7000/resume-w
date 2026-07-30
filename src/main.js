@@ -498,62 +498,124 @@ scene.add(car);
 const carBody = new THREE.Group();
 car.add(carBody);
 
+// GT-R Nismo livery: matte gunmetal paint, carbon-black trim, Nismo-red accents
 const paintMaterial = new THREE.MeshStandardMaterial({
-  color: 0x2b50d4, // Bayside Blue
-  metalness: 0.6,
-  roughness: 0.35,
+  color: 0x6c727a, // matte gunmetal grey
+  metalness: 0.55,
+  roughness: 0.5,
   flatShading: true,
 });
 const trimMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0b0f16,
+  color: 0x0b0f16, // carbon black
+  metalness: 0.3,
   roughness: 0.7,
   flatShading: true,
 });
+const accentMaterial = new THREE.MeshStandardMaterial({
+  color: 0xd11f28, // Nismo red
+  metalness: 0.2,
+  roughness: 0.45,
+  flatShading: true,
+});
 const glassMaterial = new THREE.MeshStandardMaterial({
-  color: 0x0a1420,
-  metalness: 0.6,
-  roughness: 0.3,
-  emissive: 0x4fd1c5,
-  emissiveIntensity: 0.04,
+  color: 0x090d14, // dark tinted glass
+  metalness: 0.7,
+  roughness: 0.22,
   flatShading: true,
 });
 
-// Wide low body
-const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.42, 3.8), paintMaterial);
-chassis.position.y = 0.6;
+// Wide low body — painted upper, black lower rocker line to sit it low
+const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.34, 3.8), paintMaterial);
+chassis.position.y = 0.66;
 carBody.add(chassis);
+const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.24, 3.68), trimMaterial);
+lowerBody.position.y = 0.44;
+carBody.add(lowerBody);
 
-// Hood bulge (GT-R power dome)
-const hood = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 1.0), paintMaterial);
-hood.position.set(0, 0.84, 1.15);
+// Sculpted shoulders: a slightly narrower painted upper deck
+const shoulders = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.22, 3.1), paintMaterial);
+shoulders.position.set(0, 0.9, -0.15);
+carBody.add(shoulders);
+
+// Hood: power dome + twin vents
+const hood = new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.1, 1.55), paintMaterial);
+hood.position.set(0, 0.85, 1.12);
 carBody.add(hood);
+const dome = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.08, 0.95), paintMaterial);
+dome.position.set(0, 0.92, 1.15);
+carBody.add(dome);
+[-0.24, 0.24].forEach((x) => {
+  const vent = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.36), trimMaterial);
+  vent.position.set(x, 0.965, 1.12);
+  carBody.add(vent);
+});
 
-// Fastback greenhouse: tapered 4-sided prism → raked windshield & rear glass
-const cabinGeometry = new THREE.CylinderGeometry(0.62, 0.98, 0.44, 4, 1);
+// Fastback greenhouse: tinted glass prism + body-colored roof panel
+const cabinGeometry = new THREE.CylinderGeometry(0.6, 0.96, 0.46, 4, 1);
 cabinGeometry.rotateY(Math.PI / 4);
 const cabin = new THREE.Mesh(cabinGeometry, glassMaterial);
-cabin.scale.set(1.15, 1, 2.0);
-cabin.position.set(0, 1.01, -0.3);
+cabin.scale.set(1.18, 1, 2.05);
+cabin.position.set(0, 1.04, -0.3);
 carBody.add(cabin);
+const roof = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 1.28), paintMaterial);
+roof.position.set(0, 1.22, -0.42);
+carBody.add(roof);
 
-// Rear wing — the GT-R signature
-const wingPostGeometry = new THREE.BoxGeometry(0.08, 0.26, 0.1);
-[-0.55, 0.55].forEach((x) => {
+// Rear wing — big GT-R swan-neck spec with endplates + red trailing edge
+const wingPostGeometry = new THREE.BoxGeometry(0.07, 0.32, 0.12);
+[-0.62, 0.62].forEach((x) => {
   const wingPost = new THREE.Mesh(wingPostGeometry, trimMaterial);
-  wingPost.position.set(x, 0.92, -1.76);
+  wingPost.position.set(x, 1.0, -1.68);
   carBody.add(wingPost);
 });
-const wing = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.07, 0.44), trimMaterial);
-wing.position.set(0, 1.07, -1.8);
+const wing = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.06, 0.46), paintMaterial);
+wing.position.set(0, 1.17, -1.82);
 carBody.add(wing);
+const wingLip = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.035, 0.08), accentMaterial);
+wingLip.position.set(0, 1.15, -2.03);
+carBody.add(wingLip);
+[-0.87, 0.87].forEach((x) => {
+  const endplate = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.46), trimMaterial);
+  endplate.position.set(x, 1.17, -1.82);
+  carBody.add(endplate);
+});
 
-// Front splitter & rear diffuser
-const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.1, 0.3), trimMaterial);
-splitter.position.set(0, 0.34, 1.8);
-carBody.add(splitter);
-const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.12, 0.24), trimMaterial);
-diffuser.position.set(0, 0.35, -1.82);
+// Front fascia: black bumper, mesh grille, red GT-R badge + Nismo-red lower lip
+const bumper = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.32, 0.34), trimMaterial);
+bumper.position.set(0, 0.52, 1.83);
+carBody.add(bumper);
+const grille = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.22, 0.06), trimMaterial);
+grille.position.set(0, 0.66, 1.99);
+carBody.add(grille);
+const badge = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.05), accentMaterial);
+badge.position.set(0, 0.66, 2.01);
+carBody.add(badge);
+const frontLip = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.06, 0.42), accentMaterial);
+frontLip.position.set(0, 0.35, 1.82);
+carBody.add(frontLip);
+[-0.88, 0.88].forEach((x) => {
+  const canard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.2), accentMaterial);
+  canard.position.set(x, 0.52, 1.72);
+  carBody.add(canard);
+});
+
+// Side skirts with a Nismo-red pinstripe
+[-0.9, 0.9].forEach((x) => {
+  const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 2.3), trimMaterial);
+  skirt.position.set(x, 0.42, -0.05);
+  carBody.add(skirt);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.03, 2.3), accentMaterial);
+  stripe.position.set(x, 0.49, -0.05);
+  carBody.add(stripe);
+});
+
+// Rear diffuser (black) + red accent lip
+const diffuser = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.14, 0.3), trimMaterial);
+diffuser.position.set(0, 0.39, -1.82);
 carBody.add(diffuser);
+const diffuserLip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.04, 0.12), accentMaterial);
+diffuserLip.position.set(0, 0.33, -1.94);
+carBody.add(diffuserLip);
 
 // Slim headlights
 const headlightGeometry = new THREE.BoxGeometry(0.4, 0.09, 0.06);
@@ -641,38 +703,85 @@ const exhaustMaterial = new THREE.MeshStandardMaterial({
   carBody.add(exhaust);
 });
 
-// Wheels — axle baked along X so rotation.x rolls them; silver hubs
-const WHEEL_RADIUS = 0.37;
-const wheelGeometry = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.34, 16);
-wheelGeometry.rotateZ(Math.PI / 2);
-const hubGeometry = new THREE.CylinderGeometry(0.17, 0.17, 0.36, 8);
-hubGeometry.rotateZ(Math.PI / 2);
-const wheelMaterial = new THREE.MeshStandardMaterial({
-  color: 0x11151d,
-  roughness: 0.9,
+// Wheels — black multi-spoke rims with red brake calipers. Axle baked along X
+// so rotation.x rolls them.
+const WHEEL_RADIUS = 0.4;
+const WHEEL_WIDTH = 0.32;
+const wheelTireGeometry = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 22);
+wheelTireGeometry.rotateZ(Math.PI / 2);
+const rimFaceGeometry = new THREE.CylinderGeometry(
+  WHEEL_RADIUS * 0.74,
+  WHEEL_RADIUS * 0.74,
+  WHEEL_WIDTH * 0.55,
+  20
+);
+rimFaceGeometry.rotateZ(Math.PI / 2);
+const spokeGeometry = new THREE.BoxGeometry(0.028, WHEEL_RADIUS * 1.44, 0.05);
+const capGeometry = new THREE.CylinderGeometry(0.1, 0.1, WHEEL_WIDTH * 0.62, 10);
+capGeometry.rotateZ(Math.PI / 2);
+const caliperGeometry = new THREE.BoxGeometry(0.05, 0.2, 0.13);
+
+const wheelTireMaterial = new THREE.MeshStandardMaterial({
+  color: 0x0a0c10,
+  roughness: 0.95,
   flatShading: true,
 });
-const hubMaterial = new THREE.MeshStandardMaterial({
-  color: 0x9aa5b1,
+const rimMaterial = new THREE.MeshStandardMaterial({
+  color: 0x15181f,
+  metalness: 0.7,
+  roughness: 0.4,
+  flatShading: true,
+});
+const spokeMaterial = new THREE.MeshStandardMaterial({
+  color: 0x2a2e36,
   metalness: 0.8,
-  roughness: 0.35,
+  roughness: 0.45,
   flatShading: true,
 });
+const capMaterial = new THREE.MeshStandardMaterial({
+  color: 0x8a929c,
+  metalness: 0.9,
+  roughness: 0.3,
+});
+const caliperMaterial = new THREE.MeshStandardMaterial({
+  color: 0xd11f28,
+  emissive: 0xd11f28,
+  emissiveIntensity: 0.18,
+  roughness: 0.5,
+});
+
+function makeWheel() {
+  const wheel = new THREE.Group();
+  wheel.add(new THREE.Mesh(wheelTireGeometry, wheelTireMaterial));
+  wheel.add(new THREE.Mesh(rimFaceGeometry, rimMaterial));
+  // spokes on the outer face (5 bars → a 10-spoke star)
+  const faceX = WHEEL_WIDTH * 0.5;
+  for (let i = 0; i < 5; i += 1) {
+    const spoke = new THREE.Mesh(spokeGeometry, spokeMaterial);
+    spoke.position.x = faceX;
+    spoke.rotation.x = (i / 5) * Math.PI; // 5 bars, 36° apart
+    wheel.add(spoke);
+  }
+  wheel.add(new THREE.Mesh(capGeometry, capMaterial));
+  return wheel;
+}
 
 const wheels = [];
 const frontPivots = [];
 [
-  { x: -0.82, z: 1.22, front: true },
-  { x: 0.82, z: 1.22, front: true },
-  { x: -0.82, z: -1.22, front: false },
-  { x: 0.82, z: -1.22, front: false },
+  { x: -0.84, z: 1.22, front: true },
+  { x: 0.84, z: 1.22, front: true },
+  { x: -0.84, z: -1.22, front: false },
+  { x: 0.84, z: -1.22, front: false },
 ].forEach(({ x, z, front }) => {
-  const wheel = new THREE.Group();
-  wheel.add(new THREE.Mesh(wheelGeometry, wheelMaterial));
-  wheel.add(new THREE.Mesh(hubGeometry, hubMaterial));
+  const wheel = makeWheel();
   const pivot = new THREE.Group();
   pivot.position.set(x, WHEEL_RADIUS, z);
   pivot.add(wheel);
+  // red brake caliper — fixed to the hub (on the pivot, so it doesn't spin)
+  const caliper = new THREE.Mesh(caliperGeometry, caliperMaterial);
+  caliper.position.set(0, WHEEL_RADIUS * 0.55, 0);
+  pivot.add(caliper);
   car.add(pivot);
   wheels.push(wheel);
   if (front) frontPivots.push(pivot);
