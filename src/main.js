@@ -17,7 +17,7 @@ const sizes = {
 };
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x05070f, 0.024);
+scene.fog = new THREE.FogExp2(0x05070f, 0.017); // thinner: the circuit is long
 
 const camera = new THREE.PerspectiveCamera(60, sizes.width / sizes.height, 0.1, 300);
 scene.add(camera);
@@ -45,7 +45,7 @@ scene.add(amberLight);
 
 /* ---------------- ground ---------------- */
 const GROUND_Y = -3.6;
-const WORLD_RADIUS = 65;
+const WORLD_RADIUS = 72; // the circuit reaches ~50 out, so leave room around it
 
 const grid = new THREE.GridHelper(320, 160, 0x2a5a5f, 0x11202e);
 grid.position.y = GROUND_Y;
@@ -62,29 +62,107 @@ floor.position.y = GROUND_Y - 0.03;
 scene.add(floor);
 
 /* ---------------- race track ---------------- */
-const TRACK_RADIUS = 22;
-const TRACK_INNER = 18.5;
-const TRACK_OUTER = 25.5;
+// A closed circuit rather than a plain ring: long straights, fast sweepers, a
+// pinched "waist" that cuts back toward the middle, and a wide hairpin.
+// Everything that sits on or beside the track (gate, lamps, ramps, cones) is
+// positioned through placeOnTrack(t, offset), so reshaping the waypoints below
+// moves the whole layout with it.
+const TRACK_HALF_WIDTH = 3.6;
+const TRACK_WAYPOINTS = [
+  [38, 8],
+  [38, -12],
+  [32, -28],
+  [18, -38],
+  [0, -40],
+  [-16, -34],
+  [-24, -20],
+  [-20, -6],
+  [-30, 6],
+  [-40, 18],
+  [-32, 32],
+  [-14, 38],
+  [6, 36],
+  [22, 28],
+  [32, 20],
+];
+const trackCurve = new THREE.CatmullRomCurve3(
+  TRACK_WAYPOINTS.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+  true,
+  "catmullrom",
+  0.5
+);
 
-const flatRing = (inner, outer, color, y, opacity = 1, thetaStart = 0, thetaLength = Math.PI * 2) => {
-  const mesh = new THREE.Mesh(
-    new THREE.RingGeometry(inner, outer, 96, 1, thetaStart, thetaLength),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: opacity < 1,
-      opacity,
-      side: THREE.DoubleSide,
-    })
-  );
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = y;
+// Evenly spaced samples of the centerline, reused for the ribbons and for
+// distance queries when scattering scenery.
+const TRACK_SAMPLES = 420;
+const trackPoints = [];
+const trackTangents = [];
+for (let i = 0; i < TRACK_SAMPLES; i += 1) {
+  const t = i / TRACK_SAMPLES;
+  trackPoints.push(trackCurve.getPointAt(t));
+  trackTangents.push(trackCurve.getTangentAt(t));
+}
+
+// Position + facing at a point on the circuit. `offset` steps sideways from
+// the centerline along the normal (-tangent.z, tangent.x).
+function placeOnTrack(t, offset = 0) {
+  const tt = THREE.MathUtils.euclideanModulo(t, 1);
+  const p = trackCurve.getPointAt(tt);
+  const tan = trackCurve.getTangentAt(tt);
+  return {
+    x: p.x - tan.z * offset,
+    z: p.z + tan.x * offset,
+    heading: Math.atan2(tan.x, tan.z),
+  };
+}
+
+function distanceToTrack(x, z) {
+  let min = Infinity;
+  for (let i = 0; i < TRACK_SAMPLES; i += 1) {
+    const d = Math.hypot(x - trackPoints[i].x, z - trackPoints[i].z);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+// Flat ribbon following the circuit between two lateral offsets. `stripe`
+// ([colorA, colorB, runLength]) alternates vertex colors, which is how the
+// red/white curbs are drawn without a texture.
+function trackRibbon(offA, offB, y, material, stripe) {
+  const positions = [];
+  const colors = [];
+  const indices = [];
+  const colorA = stripe && new THREE.Color(stripe[0]);
+  const colorB = stripe && new THREE.Color(stripe[1]);
+  for (let i = 0; i < TRACK_SAMPLES; i += 1) {
+    const p = trackPoints[i];
+    const tan = trackTangents[i];
+    positions.push(p.x - tan.z * offA, y, p.z + tan.x * offA);
+    positions.push(p.x - tan.z * offB, y, p.z + tan.x * offB);
+    if (stripe) {
+      const c = Math.floor(i / stripe[2]) % 2 === 0 ? colorA : colorB;
+      colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    }
+  }
+  for (let i = 0; i < TRACK_SAMPLES; i += 1) {
+    const j = (i + 1) % TRACK_SAMPLES; // wrap: the circuit is closed
+    indices.push(i * 2, i * 2 + 1, j * 2, i * 2 + 1, j * 2 + 1, j * 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  if (stripe) geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);
   return mesh;
-};
+}
 
 // Asphalt surface — lit material so headlights and street lamps pool on it
-const asphalt = new THREE.Mesh(
-  new THREE.RingGeometry(TRACK_INNER, TRACK_OUTER, 96),
+trackRibbon(
+  -TRACK_HALF_WIDTH,
+  TRACK_HALF_WIDTH,
+  GROUND_Y + 0.02,
   new THREE.MeshStandardMaterial({
     color: 0x0e1a28,
     roughness: 0.9,
@@ -93,22 +171,33 @@ const asphalt = new THREE.Mesh(
     side: THREE.DoubleSide,
   })
 );
-asphalt.rotation.x = -Math.PI / 2;
-asphalt.position.y = GROUND_Y + 0.02;
-scene.add(asphalt);
 
-// Edge lines
-flatRing(TRACK_INNER - 0.2, TRACK_INNER + 0.1, 0x3f8f8f, GROUND_Y + 0.03);
-flatRing(TRACK_OUTER - 0.1, TRACK_OUTER + 0.2, 0x3f8f8f, GROUND_Y + 0.03);
+// Red/white racing curbs down both edges
+const curbMaterial = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 0.6,
+  side: THREE.DoubleSide,
+});
+trackRibbon(TRACK_HALF_WIDTH, TRACK_HALF_WIDTH + 0.75, GROUND_Y + 0.035, curbMaterial, [
+  0xe6edf7, 0xc53030, 6,
+]);
+trackRibbon(-TRACK_HALF_WIDTH - 0.75, -TRACK_HALF_WIDTH, GROUND_Y + 0.035, curbMaterial, [
+  0xc53030, 0xe6edf7, 6,
+]);
 
 // Dashed centerline
-const DASH_COUNT = 24;
+const dashGeometry = new THREE.PlaneGeometry(0.3, 2.0).rotateX(-Math.PI / 2);
+const dashMaterial = new THREE.MeshBasicMaterial({ color: 0x2c5a74 });
+const DASH_COUNT = 96;
 for (let i = 0; i < DASH_COUNT; i += 1) {
-  const theta = (i / DASH_COUNT) * Math.PI * 2;
-  flatRing(TRACK_RADIUS - 0.16, TRACK_RADIUS + 0.16, 0x2c5a74, GROUND_Y + 0.03, 1, theta, 0.1);
+  const spot = placeOnTrack(i / DASH_COUNT);
+  const dash = new THREE.Mesh(dashGeometry, dashMaterial);
+  dash.position.set(spot.x, GROUND_Y + 0.03, spot.z);
+  dash.rotation.y = spot.heading;
+  scene.add(dash);
 }
 
-// Checkered start/finish line (at angle 0 → world position x = TRACK_RADIUS, z = 0)
+// Checkered start/finish line, at t = 0 on the circuit
 const checkerCanvas = document.createElement("canvas");
 checkerCanvas.width = 64;
 checkerCanvas.height = 16;
@@ -121,12 +210,13 @@ for (let x = 0; x < 8; x += 1) {
 }
 const checkerTexture = new THREE.CanvasTexture(checkerCanvas);
 checkerTexture.magFilter = THREE.NearestFilter;
+const START = placeOnTrack(0);
 const startLine = new THREE.Mesh(
-  new THREE.PlaneGeometry(TRACK_OUTER - TRACK_INNER - 0.2, 1.0),
+  new THREE.PlaneGeometry(TRACK_HALF_WIDTH * 2 - 0.2, 1.0).rotateX(-Math.PI / 2),
   new THREE.MeshBasicMaterial({ map: checkerTexture })
 );
-startLine.rotation.x = -Math.PI / 2;
-startLine.position.set(TRACK_RADIUS, GROUND_Y + 0.04, 0);
+startLine.position.set(START.x, GROUND_Y + 0.04, START.z);
+startLine.rotation.y = START.heading;
 scene.add(startLine);
 
 // Solid obstacles can't be knocked away, so they need to be *seen* in the dark.
@@ -161,18 +251,92 @@ const bannerMaterial = new THREE.MeshStandardMaterial({
   flatShading: true,
 });
 const postGeometry = new THREE.BoxGeometry(0.32, 2.4, 0.32);
-[TRACK_INNER + 0.2, TRACK_OUTER - 0.2].forEach((x) => {
+// Straddling the start line; reused below as solid obstacles.
+const GATE_POSTS = [TRACK_HALF_WIDTH - 0.1, -(TRACK_HALF_WIDTH - 0.1)].map((offset) =>
+  placeOnTrack(0, offset)
+);
+GATE_POSTS.forEach((spot) => {
   const post = new THREE.Mesh(postGeometry, postMaterial);
-  post.position.set(x, GROUND_Y + 1.2, 0);
+  post.position.set(spot.x, GROUND_Y + 1.2, spot.z);
   addRimGlow(post, 1.1);
   scene.add(post);
 });
 const banner = new THREE.Mesh(
-  new THREE.BoxGeometry(TRACK_OUTER - TRACK_INNER - 0.1, 0.5, 0.24),
+  new THREE.BoxGeometry(TRACK_HALF_WIDTH * 2, 0.5, 0.24),
   bannerMaterial
 );
-banner.position.set(TRACK_RADIUS, GROUND_Y + 2.55, 0);
+banner.position.set(START.x, GROUND_Y + 2.55, START.z);
+banner.rotation.y = START.heading;
 scene.add(banner);
+
+/* ---------------- jump ramps ---------------- */
+// Wedges sitting on the racing line: drive up the slope and the car launches
+// off the lip (the airborne handling lives in updateCar).
+const ramps = [];
+const rampMaterial = new THREE.MeshStandardMaterial({
+  color: 0x1b2635,
+  roughness: 0.75,
+  flatShading: true,
+});
+const rampLipMaterial = new THREE.MeshStandardMaterial({
+  color: 0xf6ad55,
+  emissive: 0xf6ad55,
+  emissiveIntensity: 0.9,
+  roughness: 0.5,
+});
+
+function addRamp(t, { length = 6.5, width = 6.4, height = 1.7 } = {}) {
+  const spot = placeOnTrack(t);
+  // Right-triangle profile extruded sideways: flat at the back, full height at
+  // the lip, so the take-off edge is a clean drop.
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(length, 0);
+  shape.lineTo(length, height);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false });
+  geometry.rotateY(-Math.PI / 2); // run along +z (forward), width along x
+  geometry.translate(width / 2, 0, -length / 2); // center on the placement point
+  const mesh = new THREE.Mesh(geometry, rampMaterial);
+  mesh.position.set(spot.x, GROUND_Y + 0.02, spot.z);
+  mesh.rotation.y = spot.heading;
+  // glowing lip so the take-off edge reads in the dark
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(width, 0.14, 0.36), rampLipMaterial);
+  lip.position.set(0, height, length / 2 - 0.18);
+  mesh.add(lip);
+  scene.add(mesh);
+  ramps.push({
+    x: spot.x,
+    z: spot.z,
+    heading: spot.heading,
+    halfLen: length / 2,
+    halfWidth: width / 2,
+    height,
+  });
+}
+[0.13, 0.45, 0.78].forEach((t) => addRamp(t));
+
+// Height of the driving surface at a world point (0 = ground level).
+function surfaceHeightAt(x, z) {
+  for (let i = 0; i < ramps.length; i += 1) {
+    const r = ramps[i];
+    const dx = x - r.x;
+    const dz = z - r.z;
+    // rotate world offset into the ramp's local frame
+    const lx = dx * Math.cos(r.heading) - dz * Math.sin(r.heading);
+    const lz = dx * Math.sin(r.heading) + dz * Math.cos(r.heading);
+    if (Math.abs(lx) <= r.halfWidth && Math.abs(lz) <= r.halfLen) {
+      return (r.height * (lz + r.halfLen)) / (2 * r.halfLen);
+    }
+  }
+  return 0;
+}
+
+function nearRamp(x, z, pad = 2.5) {
+  return ramps.some(
+    (r) => Math.hypot(x - r.x, z - r.z) < Math.max(r.halfLen, r.halfWidth) + pad
+  );
+}
 
 /* ================================================================
    Obstacles
@@ -209,21 +373,36 @@ const rockMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.8,
 });
 
-function addRock(radius, angle, s) {
+function addRock(x, z, s) {
   const rock = new THREE.Mesh(rockGeometry, rockMaterial);
-  rock.position.set(Math.cos(angle) * radius, GROUND_Y + s * 0.55, Math.sin(angle) * radius);
+  rock.position.set(x, GROUND_Y + s * 0.55, z);
   rock.scale.setScalar(s);
   rock.rotation.set(rand(0, Math.PI), rand(0, Math.PI), 0);
   addRimGlow(rock);
   scene.add(rock);
-  solidObstacles.push({ x: rock.position.x, z: rock.position.z, r: s * 0.95, type: "rock" });
+  solidObstacles.push({ x, z, r: s * 0.95, type: "rock" });
 }
-for (let i = 0; i < 4; i += 1) addRock(rand(6, 13), rand(0, Math.PI * 2), rand(0.5, 1.1));
-for (let i = 0; i < 10; i += 1) addRock(rand(31, 55), rand(0, Math.PI * 2), rand(0.5, 1.7));
+// Scattered anywhere that is clear of the circuit — the track now weaves all
+// over the world, so positions are rejection-sampled against it.
+{
+  let placed = 0;
+  let guard = 0;
+  while (placed < 18 && guard < 900) {
+    guard += 1;
+    const angle = rand(0, Math.PI * 2);
+    const radius = rand(7, WORLD_RADIUS - 6);
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    if (distanceToTrack(x, z) < TRACK_HALF_WIDTH + 3.5) continue;
+    addRock(x, z, rand(0.5, 1.7));
+    placed += 1;
+  }
+}
 
 // --- gate posts are solid too
-solidObstacles.push({ x: TRACK_INNER + 0.2, z: 0, r: 0.45, type: "post" });
-solidObstacles.push({ x: TRACK_OUTER - 0.2, z: 0, r: 0.45, type: "post" });
+GATE_POSTS.forEach((spot) => {
+  solidObstacles.push({ x: spot.x, z: spot.z, r: 0.45, type: "post" });
+});
 
 // --- solid tire stacks guarding the corners
 const tireGeometry = new THREE.TorusGeometry(0.46, 0.17, 8, 18);
@@ -234,7 +413,7 @@ const tireMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.95,
   flatShading: true,
 });
-function addTireStack(radius, theta) {
+function addTireStack(x, z) {
   const stack = new THREE.Group();
   for (let i = 0; i < 3; i += 1) {
     const tire = new THREE.Mesh(tireGeometry, tireMaterial);
@@ -244,14 +423,14 @@ function addTireStack(radius, theta) {
     addRimGlow(tire, 1.18);
     stack.add(tire);
   }
-  stack.position.set(Math.cos(theta) * radius, GROUND_Y, Math.sin(theta) * radius);
+  stack.position.set(x, GROUND_Y, z);
   scene.add(stack);
-  solidObstacles.push({ x: stack.position.x, z: stack.position.z, r: 0.75, type: "tire" });
+  solidObstacles.push({ x, z, r: 0.75, type: "tire" });
 }
-addTireStack(27.2, 0.85);
-addTireStack(27.4, 2.7);
-addTireStack(16.6, 4.0);
-addTireStack(27.0, 5.4);
+[0.05, 0.28, 0.53, 0.67, 0.88].forEach((t, i) => {
+  const spot = placeOnTrack(t, (i % 2 === 0 ? 1 : -1) * (TRACK_HALF_WIDTH + 1.6));
+  addTireStack(spot.x, spot.z);
+});
 
 // --- street lamps on the outer edge, arms reaching over the track.
 // Poles are solid; each lamp is a real PointLight (lights the car driving
@@ -280,7 +459,9 @@ const lampArmGeometry = new THREE.BoxGeometry(2.2, 0.09, 0.09);
 const lampHeadGeometry = new THREE.BoxGeometry(0.55, 0.12, 0.26);
 const lampPoolGeometry = new THREE.CircleGeometry(3.4, 24);
 
-function addStreetLamp(radius, theta) {
+// `side` is +1 to stand the pole on the left of the racing line, -1 on the
+// right; the arm always reaches back over the asphalt.
+function addStreetLamp(t, side) {
   const lamp = new THREE.Group();
 
   const pole = new THREE.Mesh(lampPoleGeometry, lampPoleMaterial);
@@ -304,12 +485,21 @@ function addStreetLamp(radius, theta) {
   pool.position.set(-2.0, 0.06, 0);
   lamp.add(pool);
 
-  lamp.position.set(Math.cos(theta) * radius, GROUND_Y, Math.sin(theta) * radius);
-  lamp.rotation.y = -theta; // local -x points at the track center
+  const spot = placeOnTrack(t, side * (TRACK_HALF_WIDTH + 1.3));
+  lamp.position.set(spot.x, GROUND_Y, spot.z);
+  // local -x is the arm; turn it back toward the asphalt
+  lamp.rotation.y = side > 0 ? spot.heading + Math.PI : spot.heading;
   scene.add(lamp);
-  solidObstacles.push({ x: lamp.position.x, z: lamp.position.z, r: 0.5, type: "lamp" });
+  solidObstacles.push({ x: spot.x, z: spot.z, r: 0.5, type: "lamp" });
 }
-[0.3, 1.75, 3.3, 4.7].forEach((theta) => addStreetLamp(27.3, theta));
+[
+  [0.02, 1],
+  [0.2, -1],
+  [0.36, 1],
+  [0.58, -1],
+  [0.72, 1],
+  [0.93, -1],
+].forEach(([t, side]) => addStreetLamp(t, side));
 
 // --- knockable traffic cones along the track edges
 const coneGeometry = new THREE.ConeGeometry(0.34, 0.8, 10);
@@ -320,13 +510,14 @@ const coneMaterial = new THREE.MeshStandardMaterial({
   flatShading: true,
   roughness: 0.6,
 });
-const CONE_COUNT = 12;
+const CONE_COUNT = 26;
 for (let i = 0; i < CONE_COUNT; i += 1) {
-  const theta = (i / CONE_COUNT) * Math.PI * 2;
-  if (theta < 0.26 || theta > Math.PI * 2 - 0.26) continue; // keep the start gate clear
-  const radius = i % 2 === 0 ? TRACK_INNER + 1.1 : TRACK_OUTER - 1.1;
+  const t = (i + 0.5) / CONE_COUNT;
+  if (t < 0.02 || t > 0.98) continue; // keep the start gate clear
+  const spot = placeOnTrack(t, (i % 2 === 0 ? 1 : -1) * (TRACK_HALF_WIDTH - 0.9));
+  if (nearRamp(spot.x, spot.z)) continue; // don't litter the take-off zones
   const mesh = new THREE.Mesh(coneGeometry, coneMaterial);
-  mesh.position.set(Math.cos(theta) * radius, GROUND_Y + 0.4, Math.sin(theta) * radius);
+  mesh.position.set(spot.x, GROUND_Y + 0.4, spot.z);
   addKnockable(mesh, { r: 0.34, restY: GROUND_Y + 0.3, kick: 1, spin: 8, type: "cone" });
 }
 
@@ -353,15 +544,15 @@ function addBarrel(x, z) {
   barrel.rotation.y = rand(0, Math.PI);
   addKnockable(barrel, { r: 0.5, restY: GROUND_Y + 0.43, kick: 0.55, spin: 5, type: "barrel" });
 }
-function addBarrelCluster(radius, theta) {
-  const cx = Math.cos(theta) * radius;
-  const cz = Math.sin(theta) * radius;
-  addBarrel(cx, cz);
-  addBarrel(cx + 0.95, cz + 0.2);
-  addBarrel(cx + 0.45, cz + 1.0);
+function addBarrelCluster(t, offset) {
+  const spot = placeOnTrack(t, offset);
+  addBarrel(spot.x, spot.z);
+  addBarrel(spot.x + 0.95, spot.z + 0.2);
+  addBarrel(spot.x + 0.45, spot.z + 1.0);
 }
-addBarrelCluster(27.4, 1.85);
-addBarrelCluster(16.2, 4.5);
+addBarrelCluster(0.24, TRACK_HALF_WIDTH + 1.9);
+addBarrelCluster(0.62, -(TRACK_HALF_WIDTH + 2.1));
+addBarrelCluster(0.86, TRACK_HALF_WIDTH + 2.0);
 
 // --- knockable wooden crates: a pyramid right on the track + strays
 const crateGeometry = new THREE.BoxGeometry(0.72, 0.72, 0.72);
@@ -377,15 +568,13 @@ function addCrate(x, z, y = GROUND_Y + 0.36) {
   addKnockable(crate, { r: 0.5, restY: GROUND_Y + 0.36, kick: 0.8, spin: 6, type: "crate" });
 }
 {
-  // pyramid across the far side of the track (theta ≈ π)
-  const theta = Math.PI + 0.15;
-  const cx = Math.cos(theta) * TRACK_RADIUS;
-  const cz = Math.sin(theta) * TRACK_RADIUS;
-  const tx = -Math.sin(theta); // tangent direction
-  const tz = Math.cos(theta);
-  addCrate(cx + tx * 0.4, cz + tz * 0.4);
-  addCrate(cx - tx * 0.4, cz - tz * 0.4);
-  addCrate(cx, cz, GROUND_Y + 1.08);
+  // pyramid sitting right on the racing line, half a lap out
+  const spot = placeOnTrack(0.52);
+  const tx = Math.sin(spot.heading); // along the direction of travel
+  const tz = Math.cos(spot.heading);
+  addCrate(spot.x + tx * 0.4, spot.z + tz * 0.4);
+  addCrate(spot.x - tx * 0.4, spot.z - tz * 0.4);
+  addCrate(spot.x, spot.z, GROUND_Y + 1.08);
 }
 addCrate(Math.cos(2.3) * 9, Math.sin(2.3) * 9);
 addCrate(Math.cos(5.7) * 12, Math.sin(5.7) * 12);
@@ -487,11 +676,13 @@ const stars = new THREE.Points(starGeometry, starMaterial);
 scene.add(stars);
 
 /* ================================================================
-   The car — a low-poly Nissan GT-R in Bayside Blue
+   The car — a low-poly Nissan GT-R Nismo
    ================================================================ */
+// Parked just behind the start line, pointing down the circuit
+const CAR_START = placeOnTrack(-0.012);
 const car = new THREE.Group();
-car.position.set(TRACK_RADIUS, GROUND_Y, 2.5); // parked at the start line
-car.rotation.y = Math.PI;
+car.position.set(CAR_START.x, GROUND_Y, CAR_START.z);
+car.rotation.y = CAR_START.heading;
 scene.add(car);
 
 // Everything except the wheels, so the body can lean into turns
@@ -862,12 +1053,22 @@ const MAX_SPEED = 18;
 const MAX_REVERSE = 7;
 const ACCELERATION = 26;
 const STEER_RATE = 2.1;
+const GRAVITY = 20;
+const LAUNCH_BOOST = 1.3; // arcade kick so ramps actually throw the car
 
 let speed = 0;
-let heading = Math.PI;
+let heading = CAR_START.heading;
 let steerVisual = 0;
 let wheelSpin = 0;
 let driveActiveUntil = -1;
+
+// Vertical state, driven entirely by the ramps
+let carY = 0; // height above the ground plane
+let carVY = 0;
+let airborne = false;
+let carClimb = 0; // vertical speed while climbing a ramp
+let prevSurfaceY = 0;
+let carPitch = 0;
 
 function wrapAngle(a) {
   return THREE.MathUtils.euclideanModulo(a + Math.PI, Math.PI * 2) - Math.PI;
@@ -941,34 +1142,67 @@ function updateCar(dt, elapsed) {
     speed *= 0.4;
   }
 
-  // Solid obstacles: push the car out and bounce off
-  solidObstacles.forEach((ob) => {
-    const dx = car.position.x - ob.x;
-    const dz = car.position.z - ob.z;
-    const d = Math.hypot(dx, dz);
-    const minDist = ob.r + CAR_RADIUS;
-    if (d < minDist && d > 0.0001) {
-      const push = minDist - d;
-      car.position.x += (dx / d) * push;
-      car.position.z += (dz / d) * push;
-      speed *= -0.3;
+  // Ramps & jumping. On the ground the car simply sits on the ramp surface;
+  // when that surface falls away under it (the lip) it takes off carrying the
+  // vertical speed it built up on the slope, then arcs back down under gravity.
+  const surfaceY = surfaceHeightAt(car.position.x, car.position.z);
+  if (airborne) {
+    carVY -= GRAVITY * dt;
+    carY += carVY * dt;
+    if (carY <= surfaceY) {
+      carY = surfaceY;
+      carVY = 0;
+      airborne = false;
+      carClimb = 0;
+      speed *= 0.94; // scrub a little speed on touchdown
     }
-  });
+  } else {
+    const rise = surfaceY - prevSurfaceY;
+    if (rise < -0.12 && carClimb > 0.5 && Math.abs(speed) > 3) {
+      airborne = true;
+      carVY = carClimb * LAUNCH_BOOST;
+      carY = prevSurfaceY;
+    } else {
+      carY = surfaceY;
+      carClimb = rise > 0 ? rise / dt : 0;
+    }
+  }
+  prevSurfaceY = surfaceY;
+  car.position.y = GROUND_Y + carY;
 
-  // Knockables: send them flying
-  knockables.forEach((item) => {
-    if (item.state !== "upright") return;
-    const dx = item.mesh.position.x - car.position.x;
-    const dz = item.mesh.position.z - car.position.z;
-    const d = Math.hypot(dx, dz);
-    if (d < CAR_RADIUS + item.r && Math.abs(speed) > 0.5) {
-      item.state = "flying";
-      const kick = (2 + Math.abs(speed) * 0.55) * item.kick;
-      item.vel.set((dx / d) * kick, (2.2 + Math.abs(speed) * 0.14) * item.kick, (dz / d) * kick);
-      item.angVel.set(rand(-item.spin, item.spin), 0, rand(-item.spin, item.spin));
-      speed *= 0.94;
-    }
-  });
+  // Solid obstacles: push the car out and bounce off — but a big enough jump
+  // clears them entirely.
+  if (carY < 1.2) {
+    solidObstacles.forEach((ob) => {
+      const dx = car.position.x - ob.x;
+      const dz = car.position.z - ob.z;
+      const d = Math.hypot(dx, dz);
+      const minDist = ob.r + CAR_RADIUS;
+      if (d < minDist && d > 0.0001) {
+        const push = minDist - d;
+        car.position.x += (dx / d) * push;
+        car.position.z += (dz / d) * push;
+        speed *= -0.3;
+      }
+    });
+  }
+
+  // Knockables: send them flying (also missed when flying over the top)
+  if (carY < 1.0) {
+    knockables.forEach((item) => {
+      if (item.state !== "upright") return;
+      const dx = item.mesh.position.x - car.position.x;
+      const dz = item.mesh.position.z - car.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d < CAR_RADIUS + item.r && Math.abs(speed) > 0.5) {
+        item.state = "flying";
+        const kick = (2 + Math.abs(speed) * 0.55) * item.kick;
+        item.vel.set((dx / d) * kick, (2.2 + Math.abs(speed) * 0.14) * item.kick, (dz / d) * kick);
+        item.angVel.set(rand(-item.spin, item.spin), 0, rand(-item.spin, item.spin));
+        speed *= 0.94;
+      }
+    });
+  }
 
   // Wheels: roll + steer visual
   wheelSpin += (speed * dt) / WHEEL_RADIUS;
@@ -982,6 +1216,15 @@ function updateCar(dt, elapsed) {
 
   // Subtle body lean into turns
   carBody.rotation.z = -steerVisual * speedFactor * 0.12;
+
+  // Nose up the ramp and through the jump (positive rotation.x points down)
+  const pitchTarget = THREE.MathUtils.clamp(
+    -Math.atan2(airborne ? carVY : carClimb, Math.max(5, Math.abs(speed))),
+    -0.45,
+    0.45
+  );
+  carPitch += (pitchTarget - carPitch) * Math.min(1, 9 * dt);
+  carBody.rotation.x = carPitch;
 }
 
 function updateKnockables(dt) {
@@ -1033,24 +1276,50 @@ function mapArc(radius, strokeStyle, lineWidth) {
   mapCtx.stroke();
 }
 
+// The circuit never moves, so bake its outline into a Path2D once
+const MAP_TRACK = new Path2D();
+trackPoints.forEach((p, i) => {
+  const px = MAP_C + p.x * MAP_SCALE;
+  const pz = MAP_C + p.z * MAP_SCALE;
+  if (i === 0) MAP_TRACK.moveTo(px, pz);
+  else MAP_TRACK.lineTo(px, pz);
+});
+MAP_TRACK.closePath();
+const MAP_START_LINE = [
+  placeOnTrack(0, -TRACK_HALF_WIDTH),
+  placeOnTrack(0, TRACK_HALF_WIDTH),
+];
+
 function drawMinimap() {
   mapCtx.clearRect(0, 0, MAP_LOGICAL, MAP_LOGICAL);
 
   // World boundary
   mapArc(WORLD_RADIUS, "rgba(148, 163, 184, 0.3)", 1);
 
-  // Track band + edges
-  mapArc(TRACK_RADIUS, "rgba(79, 209, 197, 0.16)", (TRACK_OUTER - TRACK_INNER) * MAP_SCALE);
-  mapArc(TRACK_INNER, "rgba(79, 209, 197, 0.5)", 1);
-  mapArc(TRACK_OUTER, "rgba(79, 209, 197, 0.5)", 1);
+  // Track band + centerline
+  mapCtx.lineJoin = "round";
+  mapCtx.strokeStyle = "rgba(79, 209, 197, 0.16)";
+  mapCtx.lineWidth = TRACK_HALF_WIDTH * 2 * MAP_SCALE;
+  mapCtx.stroke(MAP_TRACK);
+  mapCtx.strokeStyle = "rgba(79, 209, 197, 0.45)";
+  mapCtx.lineWidth = 1;
+  mapCtx.stroke(MAP_TRACK);
 
-  // Start/finish line (angle 0 → +x on the map)
+  // Start/finish line
   mapCtx.strokeStyle = "rgba(230, 237, 247, 0.9)";
   mapCtx.lineWidth = 2;
   mapCtx.beginPath();
-  mapCtx.moveTo(MAP_C + TRACK_INNER * MAP_SCALE, MAP_C);
-  mapCtx.lineTo(MAP_C + TRACK_OUTER * MAP_SCALE, MAP_C);
+  mapCtx.moveTo(MAP_C + MAP_START_LINE[0].x * MAP_SCALE, MAP_C + MAP_START_LINE[0].z * MAP_SCALE);
+  mapCtx.lineTo(MAP_C + MAP_START_LINE[1].x * MAP_SCALE, MAP_C + MAP_START_LINE[1].z * MAP_SCALE);
   mapCtx.stroke();
+
+  // Jump ramps
+  mapCtx.fillStyle = "rgba(246, 173, 85, 0.95)";
+  ramps.forEach((r) => {
+    mapCtx.beginPath();
+    mapCtx.arc(MAP_C + r.x * MAP_SCALE, MAP_C + r.z * MAP_SCALE, 2.4, 0, Math.PI * 2);
+    mapCtx.fill();
+  });
 
   // Network hub at the center
   mapCtx.fillStyle = "rgba(79, 209, 197, 0.9)";
@@ -1148,7 +1417,7 @@ function setDrivingUi(active) {
 const CAMERA_OFFSET = new THREE.Vector3(0, 6.4, 11.5);
 const cameraGoal = new THREE.Vector3();
 const lookGoal = new THREE.Vector3();
-const lookCurrent = new THREE.Vector3(car.position.x, GROUND_Y + 2.6, car.position.z);
+const lookCurrent = new THREE.Vector3(car.position.x, car.position.y + 2.6, car.position.z);
 
 // "Click to start" gate: the scene sits behind a dark spotlight overlay until
 // the user clicks. `started` unlocks driving. Reduced motion skips the gate.
@@ -1172,7 +1441,7 @@ function updateCamera(dt) {
   cameraGoal.y += -pointer.y * 0.7;
   cameraGoal.z += leadZ;
 
-  lookGoal.set(car.position.x + leadX, GROUND_Y + 2.6, car.position.z + leadZ);
+  lookGoal.set(car.position.x + leadX, car.position.y + 2.6, car.position.z + leadZ);
 
   const damp = 1 - Math.exp(-CAMERA_DAMP * dt);
   camera.position.lerp(cameraGoal, damp);
