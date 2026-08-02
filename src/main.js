@@ -185,6 +185,33 @@ trackRibbon(-TRACK_HALF_WIDTH - 0.75, -TRACK_HALF_WIDTH, GROUND_Y + 0.035, curbM
   0xc53030, 0xe6edf7, 6,
 ]);
 
+// Glowing edge lines so the road area reads at a glance in the dark. Unlit and
+// additive (fog off) so the far side of the circuit still traces out.
+const edgeHaloMaterial = new THREE.MeshBasicMaterial({
+  color: 0x4fd1c5,
+  transparent: true,
+  opacity: 0.15,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  fog: false,
+});
+const edgeCoreMaterial = new THREE.MeshBasicMaterial({
+  color: 0x8ffdf0,
+  transparent: true,
+  opacity: 0.9,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  fog: false,
+});
+const EDGE_LINE = TRACK_HALF_WIDTH - 0.12;
+[1, -1].forEach((side) => {
+  // wide soft bleed onto the asphalt, then a tight bright core on top
+  trackRibbon(side * (EDGE_LINE - 0.95), side * (EDGE_LINE + 0.3), GROUND_Y + 0.045, edgeHaloMaterial);
+  trackRibbon(side * (EDGE_LINE - 0.09), side * (EDGE_LINE + 0.09), GROUND_Y + 0.05, edgeCoreMaterial);
+});
+
 // Dashed centerline
 const dashGeometry = new THREE.PlaneGeometry(0.3, 2.0).rotateX(-Math.PI / 2);
 const dashMaterial = new THREE.MeshBasicMaterial({ color: 0x2c5a74 });
