@@ -915,11 +915,75 @@ const exhaustMaterial = new THREE.MeshStandardMaterial({
   metalness: 0.9,
   roughness: 0.3,
 });
-[-0.56, -0.42, 0.42, 0.56].forEach((x) => {
+const EXHAUST_X = [-0.56, -0.42, 0.42, 0.56];
+EXHAUST_X.forEach((x) => {
   const exhaust = new THREE.Mesh(exhaustGeometry, exhaustMaterial);
   exhaust.position.set(x, 0.38, -1.9);
   carBody.add(exhaust);
 });
+
+// Exhaust flames — additive cones spat out of the tips under throttle. Like
+// the headlight beams these are unlit shells with the falloff baked into
+// vertex colors: blue-white at the pipe, amber, then dying to nothing.
+const FLAME_LENGTH = 0.9;
+function makeFlameGeometry() {
+  const geometry = new THREE.ConeGeometry(0.075, FLAME_LENGTH, 10, 1, true);
+  geometry.rotateX(-Math.PI / 2); // apex points backward (-z)
+  geometry.translate(0, 0, -FLAME_LENGTH / 2); // base sits on the tip
+  const pos = geometry.attributes.position;
+  const colors = [];
+  const hot = new THREE.Color(0x9fd8ff);
+  const mid = new THREE.Color(0xffc04a);
+  const tail = new THREE.Color(0xff3b1f);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i += 1) {
+    const t = THREE.MathUtils.clamp(-pos.getZ(i) / FLAME_LENGTH, 0, 1);
+    if (t < 0.3) c.copy(hot).lerp(mid, t / 0.3);
+    else c.copy(mid).lerp(tail, (t - 0.3) / 0.7);
+    const fade = Math.pow(1 - t, 1.5);
+    colors.push(c.r * fade, c.g * fade, c.b * fade);
+  }
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  return geometry;
+}
+const flameMaterial = new THREE.MeshBasicMaterial({
+  vertexColors: true,
+  transparent: true,
+  opacity: 0,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  fog: false,
+});
+const flames = EXHAUST_X.map((x) => {
+  const flame = new THREE.Mesh(makeFlameGeometry(), flameMaterial);
+  flame.position.set(x, 0.38, -1.97); // just off the back of the tip
+  flame.visible = false;
+  carBody.add(flame);
+  return flame;
+});
+// Warm light so the flames actually throw glow onto the road behind the car
+const exhaustGlow = new THREE.PointLight(0xff7a2f, 0, 7, 2);
+exhaustGlow.position.set(0, 0.45, -2.2);
+carBody.add(exhaustGlow);
+
+let boost = 0; // 0..1, how hard the flames are burning
+function updateFlames(dt, elapsed, throttle) {
+  // full flare off the line, a steadier burn once up to speed
+  const want = throttle > 0 ? (Math.abs(speed) < 8 ? 1 : 0.7) : 0;
+  boost += (want - boost) * Math.min(1, (want > boost ? 15 : 6) * dt);
+
+  const lit = boost > 0.02;
+  flameMaterial.opacity = 0.6 * boost;
+  exhaustGlow.intensity = boost * 22;
+  flames.forEach((flame, i) => {
+    flame.visible = lit;
+    if (!lit) return;
+    const flicker = 0.78 + 0.22 * Math.sin(elapsed * 43 + i * 1.7) + rand(-0.1, 0.1);
+    const width = 0.75 + boost * 0.45;
+    flame.scale.set(width, width, (0.4 + boost * 0.95) * flicker);
+  });
+}
 
 // Wheels — black multi-spoke rims with red brake calipers. Axle baked along X
 // so rotation.x rolls them.
@@ -1243,6 +1307,8 @@ function updateCar(dt, elapsed) {
 
   // Subtle body lean into turns
   carBody.rotation.z = -steerVisual * speedFactor * 0.12;
+
+  updateFlames(dt, elapsed, throttle);
 
   // Nose up the ramp and through the jump (positive rotation.x points down)
   const pitchTarget = THREE.MathUtils.clamp(
