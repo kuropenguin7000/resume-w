@@ -1069,6 +1069,48 @@ const frontPivots = [];
   if (front) frontPivots.push(pivot);
 });
 
+// Blob shadow — a soft dark disc that tracks the car's position on the ground
+// (or on a ramp) rather than parenting to the car, so it stays put vertically
+// while the car jumps. Shrinking and fading it with altitude is what makes the
+// jump height readable.
+const shadowCanvas = document.createElement("canvas");
+shadowCanvas.width = 128;
+shadowCanvas.height = 128;
+{
+  const sctx = shadowCanvas.getContext("2d");
+  const grad = sctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, "rgba(0,0,0,0.85)");
+  grad.addColorStop(0.4, "rgba(0,0,0,0.6)");
+  grad.addColorStop(0.75, "rgba(0,0,0,0.18)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  sctx.fillStyle = grad;
+  sctx.fillRect(0, 0, 128, 128);
+}
+const SHADOW_OPACITY = 0.62;
+const carShadow = new THREE.Mesh(
+  new THREE.PlaneGeometry(3.2, 4.8).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({
+    map: new THREE.CanvasTexture(shadowCanvas),
+    transparent: true,
+    opacity: SHADOW_OPACITY,
+    depthWrite: false,
+  })
+);
+carShadow.renderOrder = 3; // after the additive edge lines, so it darkens them
+carShadow.position.set(CAR_START.x, GROUND_Y + 0.055, CAR_START.z);
+carShadow.rotation.y = CAR_START.heading;
+scene.add(carShadow);
+
+function updateCarShadow() {
+  const ground = surfaceHeightAt(car.position.x, car.position.z);
+  carShadow.position.set(car.position.x, GROUND_Y + ground + 0.055, car.position.z);
+  carShadow.rotation.y = heading;
+  // how high the car is above whatever is directly beneath it
+  const altitude = THREE.MathUtils.clamp((carY - ground) / 4, 0, 1);
+  carShadow.scale.setScalar(1 - altitude * 0.4);
+  carShadow.material.opacity = SHADOW_OPACITY * (1 - altitude * 0.75);
+}
+
 /* ---------------- driving input ---------------- */
 const keys = { forward: false, back: false, left: false, right: false };
 const KEYMAP = {
@@ -1260,6 +1302,7 @@ function updateCar(dt, elapsed) {
   }
   prevSurfaceY = surfaceY;
   car.position.y = GROUND_Y + carY;
+  updateCarShadow();
 
   // Solid obstacles: push the car out and bounce off — but a big enough jump
   // clears them entirely.
